@@ -13,11 +13,6 @@
 #include "../infra/symbol_resolver.h"
 #include "../infra/syscall_table.h"
 #include "../hook/hook_runtime.h"
-#include "../manager/manager.h"
-#include "../supercall/accctl.h"
-#include "../supercall/kstorage.h"
-#include "../supercall/sucompat.h"
-#include "../supercall/sucompat_hook.h"
 #include "../supercall/supercall.h"
 #include "../kpm/module.h"
 #include "../infra/secpass.h"
@@ -71,23 +66,6 @@ int __init kernelpatch_init(void)
 	if (rc)
 		return rc;
 
-	rc = kp_kstorage_init();
-	if (rc)
-		return rc;
-
-	rc = kp_accctl_init();
-	if (rc)
-		return rc;
-
-	rc = kp_sucompat_init();
-	if (rc)
-		return rc;
-
-	/* Auto-apply APatch config (su path + package allowlist) from
-	 * /data/adb/ap. Only used on jailbroken devices where those files exist
-	 * at insmod time; the supercall path remains the manager's fallback. */
-	kp_su_load_config();
-
 	rc = kp_hook_runtime_init();
 	if (rc)
 		/* No executable-memory path for hook trampolines (set_memory_x and
@@ -107,27 +85,12 @@ int __init kernelpatch_init(void)
 	if (rc)
 		return rc;
 
-	rc = kp_sucompat_hook_init();
-	if (rc)
-		return rc;
-
-	/* Synchronous manager scan; runs in the caller's (root) context so SELinux
-	 * allows reading /data. The appid may still be invalid if the manager is
-	 * not installed yet; the supercall handler re-checks per call. */
-	kp_manager_init();
-
-	/* Re-derive the manager uid when the package manager swaps in a fresh
-	 * packages.list (e.g. after the manager app is updated/reinstalled). */
-	hook_rename_lsm();
-
 	logki("KernelPatch LKM ready\n");
 	return 0;
 }
 
 static void __exit kernelpatch_exit(void)
 {
-	kp_sucompat_hook_exit();
-	hook_rename_lsm_exit();
 	kp_supercall_uninstall();
 	/* Unhook the CFI bypass last so it shields the other teardown from
 	 * spurious CFI failures on LKM/KPM text. */

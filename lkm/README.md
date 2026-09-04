@@ -1,3 +1,4 @@
+# 本仓库fork KernelPatch项目用于研究学习，切勿下载刷入构建产物，例如设备发生黑屏黑砖等后果自负。
 # KernelPatch LKM (DDK-built .ko)
 
 KernelPatch as a loadable kernel module, built with Android's Driver

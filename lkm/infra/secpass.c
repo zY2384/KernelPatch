@@ -15,9 +15,16 @@
 
 #include "../include/kp_lkm.h"
 #include "../kpm/module.h"
+#include "../hook/hook_runtime.h"
 #include <hook.h>
 
 struct pt_regs;
+
+enum kp_bug_trap_type {
+	KP_BUG_TRAP_TYPE_NONE = 0,
+	KP_BUG_TRAP_TYPE_WARN = 1,
+	KP_BUG_TRAP_TYPE_BUG = 2,
+};
 
 /* Is @target inside the LKM's own module image (text/data/rodata)? */
 static bool kp_target_in_module(unsigned long target)
@@ -28,6 +35,7 @@ static bool kp_target_in_module(unsigned long target)
 
 	for (type = MOD_TEXT; type < MOD_MEM_NUM_TYPES; type++) {
 		struct module_memory *m = &THIS_MODULE->mem[type];
+
 		if (m->base &&
 		    target >= (unsigned long)m->base &&
 		    target < (unsigned long)m->base + m->size)
@@ -53,6 +61,9 @@ static bool kp_target_in_module(unsigned long target)
 static bool kp_should_cfi_pass(unsigned long target)
 {
 	if (kp_target_in_module(target))
+		return true;
+
+	if (kp_hook_runtime_contains_addr(target))
 		return true;
 
 	/* Loaded / loading KPM images and the callback-trampoline page. KPM code
@@ -95,15 +106,15 @@ static kp_cfi_check_fn __replace_find_check_fn(unsigned long addr)
 
 /* ---- report_cfi_failure (6.1+) ---------------------------------------- */
 
-static int (*__backup_report_cfi_failure)(struct pt_regs *, unsigned long,
-					  unsigned long *, u32);
+static enum kp_bug_trap_type (*__backup_report_cfi_failure)(struct pt_regs *, unsigned long,
+							    unsigned long *, u32);
 
 __attribute__((no_sanitize("cfi")))
-static int __replace_report_cfi_failure(struct pt_regs *regs, unsigned long addr,
-					unsigned long *target, u32 type)
+static enum kp_bug_trap_type __replace_report_cfi_failure(struct pt_regs *regs, unsigned long addr,
+							  unsigned long *target, u32 type)
 {
 	if (kp_should_cfi_pass(*target))
-		return BUG_TRAP_TYPE_WARN;
+		return KP_BUG_TRAP_TYPE_WARN;
 	return __backup_report_cfi_failure(regs, addr, target, type);
 }
 

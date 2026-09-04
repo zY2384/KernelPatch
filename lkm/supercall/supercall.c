@@ -18,8 +18,6 @@
 
 #include "../include/kp_lkm.h"
 #include "../infra/syscall_table.h"
-#include "../manager/manager.h"
-#include "sucompat.h"
 
 #define KP_SUPERCALL_NR 45 /* __NR3264_truncate */
 
@@ -28,17 +26,9 @@ static kp_syscall_fn_t kp_orig_truncate;
 static long kp_supercall_handler(const struct pt_regs *regs)
 {
 	uid_t uid = from_kuid(current_user_ns(), current_uid());
-
-	/* The manager may grant/revoke allowlist entries; an already-allowed uid
-	 * may use the SU supercalls. Anything else is a plain truncate() call. */
-	if (!kp_is_manager_uid(uid) && !kp_is_su_allow_uid(uid)) {
-		logkd("supercall: uid %u not authorized (manager?%d allow?%d)\n", uid,
-		      kp_is_manager_uid(uid), kp_is_su_allow_uid(uid));
-		if (kp_orig_truncate)
-			return kp_orig_truncate(regs);
-		return -ENOSYS;
-	}
-
+    if (uid) {
+        return kp_orig_truncate ? kp_orig_truncate(regs) : -EINVAL;
+    }
 	long ver_xx_cmd = regs->regs[1];
 	long cmd = ver_xx_cmd & 0xFFFF;
 	if (cmd < SUPERCALL_HELLO || cmd > SUPERCALL_MAX) {

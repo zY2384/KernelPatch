@@ -24,8 +24,6 @@
 #include "../infra/symbol_resolver.h"
 #include "../infra/patch_memory.h"
 #include "../infra/syscall_table.h"
-#include "../supercall/sucompat.h"
-#include "../supercall/kstorage.h"
 #include "module.h"
 
 #include <asm/thread_info.h>
@@ -266,23 +264,25 @@ static struct pt_regs *kp_kpm_task_pt_reg(struct task_struct *task)
 	return (struct pt_regs *)(THREAD_SIZE + stack - sizeof(struct pt_regs));
 }
 
-/* SU allowlist / exclude (mirrors kpimg sucompat.c) */
+/* SU allowlist / exclude stubs — removed in slim build; KPMs that need these
+ * should implement their own authorization logic. */
 static int kp_kpm_is_su_allow_uid(uid_t uid)
 {
-	return kp_is_su_allow_uid(uid) ? 1 : 0;
+	(void)uid;
+	return 0;
 }
 
-/* Exclude list lives in the sucompat layer (group KSTORAGE_EXCLUDE_LIST_GROUP);
- * these thin wrappers are what KPMs see through the compatibility symbol
- * table, so the auto-loaded package_config excludes are visible to them. */
 static int kp_kpm_get_ap_mod_exclude(uid_t uid)
 {
-	return kp_su_get_ap_mod_exclude(uid);
+	(void)uid;
+	return 0;
 }
 
 static int kp_kpm_set_ap_mod_exclude(uid_t uid, int exclude)
 {
-	return kp_su_set_ap_mod_exclude(uid, exclude);
+	(void)uid;
+	(void)exclude;
+	return 0;
 }
 
 static struct kp_kpm_symbol kp_kpm_symbols[] = {

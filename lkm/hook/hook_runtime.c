@@ -87,6 +87,25 @@ static void kp_hook_flush_all(void)
 		kp_hook_flush_icache_all();
 }
 
+bool kp_hook_runtime_contains_addr(unsigned long addr)
+{
+	struct kp_hook_mem *mem;
+	bool found = false;
+
+	mutex_lock(&kp_hook_lock);
+	list_for_each_entry(mem, &kp_hook_mems, list) {
+		unsigned long start = (unsigned long)mem->region;
+		unsigned long end = start + PAGE_SIZE;
+
+		if (mem->region && addr >= start && addr < end) {
+			found = true;
+			break;
+		}
+	}
+	mutex_unlock(&kp_hook_lock);
+	return found;
+}
+
 int kp_hook_runtime_init(void)
 {
 	kp_hook_module_alloc = (void *)kp_resolve_symbol("module_alloc");
