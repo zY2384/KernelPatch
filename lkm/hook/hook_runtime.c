@@ -129,6 +129,11 @@ bool kp_hook_addr_in_region(unsigned long addr)
 
 int kp_hook_runtime_init(void)
 {
+	/* Initialize hash table buckets */
+	for (int i = 0; i < KP_HOOK_HASH_SIZE; i++) {
+		INIT_HLIST_HEAD(&kp_hook_hash[i]);
+	}
+
 	kp_hook_module_alloc = (void *)kp_resolve_symbol("module_alloc");
 	kp_hook_module_memfree = (void *)kp_resolve_symbol("module_memfree");
 	kp_hook_execmem_alloc = (void *)kp_resolve_symbol("execmem_alloc");
@@ -236,9 +241,8 @@ void hook_mem_free(void *payload)
 		if (mem->payload == payload) {
 			list_del(&mem->list);
 			hlist_del(&mem->hash_node);  /* Remove from hash table */
-			mutex_unlock(&kp_hook_lock);
 
-			/* Precise free based on allocation type */
+			/* Must free memory while holding lock to prevent UAF in kp_hook_addr_in_region */
 			if (mem->use_vmalloc) {
 				vfree(mem->region);
 			} else if (mem->size <= KP_HOOK_KMALLOC_MAX) {
@@ -247,6 +251,7 @@ void hook_mem_free(void *payload)
 				kp_hook_exec_free(mem->region);
 			}
 			kfree(mem);
+			mutex_unlock(&kp_hook_lock);
 			return;
 		}
 	}
