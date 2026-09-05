@@ -10,6 +10,7 @@ kernelpatch-objs := \
 	infra/symbol_resolver.o \
 	infra/patch_memory.o \
 	infra/syscall_table.o \
+	infra/sha256.o \
 	infra/secpass.o \
 	supercall/supercall.o \
 	supercall/dispatch.o \
