@@ -2,7 +2,7 @@
 /* LKM backends required by kernel/base/hook.c. */
 #include <linux/errno.h>
 #include <linux/list.h>
-#include <linux/hlist.h>
+// hlist definitions included via linux/list.h
 #include <linux/hash.h>
 #include <linux/mutex.h>
 #include <linux/slab.h>
@@ -15,6 +15,13 @@
 #include <hook.h>
 #include "../infra/patch_memory.h"
 #include "../infra/symbol_resolver.h"
+
+/* Hash table configuration */
+#define KP_HOOK_HASH_BITS 6
+#define KP_HOOK_HASH_SIZE (1 << KP_HOOK_HASH_BITS)  /* 64 buckets */
+
+/* Maximum size for kmalloc (avoids page allocation overhead) */
+#define KP_HOOK_KMALLOC_MAX (PAGE_SIZE / 2)
 
 struct kp_hook_mem {
 	struct hlist_node hash_node;  /* Hash table node */
