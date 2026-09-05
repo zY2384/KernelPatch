@@ -16,16 +16,11 @@
 #include "../infra/patch_memory.h"
 #include "../infra/symbol_resolver.h"
 
-/* Hash table configuration */
-#define KP_HOOK_HASH_BITS 6
-#define KP_HOOK_HASH_SIZE (1 << KP_HOOK_HASH_BITS)  /* 64 buckets */
-
 /* Maximum size for kmalloc (avoids page allocation overhead) */
 #define KP_HOOK_KMALLOC_MAX (PAGE_SIZE / 2)
 
 struct kp_hook_mem {
-	struct hlist_node hash_node;  /* Hash table node */
-	struct list_head list;        /* Maintenance list (for cleanup) */
+	struct list_head list;
 	uintptr_t origin;
 	enum hook_type type;
 	void *region;
@@ -40,7 +35,6 @@ struct kp_hook_mem {
 
 static LIST_HEAD(kp_hook_mems);
 static DEFINE_MUTEX(kp_hook_lock);
-static struct hlist_head kp_hook_hash[KP_HOOK_HASH_SIZE];  /* Hash table for fast lookup */
 /* Executable-memory allocators. module_alloc exists through 6.10 (__weak in
  * 6.6); 6.11+ replaced it with execmem_alloc() (EXECMEM_MODULE_TEXT).
  * vmalloc is the universal last resort (still needs set_memory_x to be
@@ -100,22 +94,14 @@ static void kp_hook_flush_all(void)
 		kp_hook_flush_icache_all();
 }
 
-/* Hash function for hook address lookup */
-static inline int kp_hook_hash_addr(unsigned long addr)
-{
-	return hash_long(addr, KP_HOOK_HASH_BITS) % KP_HOOK_HASH_SIZE;
-}
-
 /* Check if @addr falls within any hook memory region.
- * Uses hash table for O(1) average lookup with precise size-based checking.
- */
+ * Uses list traversal with precise size-based checking. */
 bool kp_hook_addr_in_region(unsigned long addr)
 {
 	struct kp_hook_mem *mem;
-	int bucket = kp_hook_hash_addr(addr);
 
 	mutex_lock(&kp_hook_lock);
-	hlist_for_each_entry(mem, &kp_hook_hash[bucket], hash_node) {
+	list_for_each_entry(mem, &kp_hook_mems, list) {
 		unsigned long start = (unsigned long)mem->region;
 		unsigned long end = start + mem->size;
 
@@ -128,13 +114,14 @@ bool kp_hook_addr_in_region(unsigned long addr)
 	return false;
 }
 
+/* Exported for compatibility */
+bool kp_hook_runtime_contains_addr(unsigned long addr)
+{
+	return kp_hook_addr_in_region(addr);
+}
+
 int kp_hook_runtime_init(void)
 {
-	/* Initialize hash table buckets */
-	for (int i = 0; i < KP_HOOK_HASH_SIZE; i++) {
-		INIT_HLIST_HEAD(&kp_hook_hash[i]);
-	}
-
 	kp_hook_module_alloc = (void *)kp_resolve_symbol("module_alloc");
 	kp_hook_module_memfree = (void *)kp_resolve_symbol("module_memfree");
 	kp_hook_execmem_alloc = (void *)kp_resolve_symbol("execmem_alloc");
@@ -190,6 +177,11 @@ void *hook_mem_zalloc(uintptr_t origin, enum hook_type type)
 		} else {
 			mem->use_vmalloc = false;
 		}
+		/* Mark as executable - critical for code execution */
+		if (kp_hook_set_memory_x) {
+			unsigned long pages = (size + PAGE_SIZE - 1) >> PAGE_SHIFT;
+			kp_hook_set_memory_x((unsigned long)mem->region, pages);
+		}
 	} else {
 		/* Large allocation: use module_alloc + set_memory_x */
 		mem->region = kp_hook_exec_alloc(size);
@@ -208,11 +200,6 @@ void *hook_mem_zalloc(uintptr_t origin, enum hook_type type)
 
 	mutex_lock(&kp_hook_lock);
 	list_add_tail(&mem->list, &kp_hook_mems);
-
-	/* Insert into hash table for fast lookup */
-	int bucket = kp_hook_hash_addr((unsigned long)mem->region);
-	hlist_add_head(&mem->hash_node, &kp_hook_hash[bucket]);
-
 	mutex_unlock(&kp_hook_lock);
 	return mem->payload;
 }
@@ -241,7 +228,6 @@ void hook_mem_free(void *payload)
 	list_for_each_entry_safe(mem, tmp, &kp_hook_mems, list) {
 		if (mem->payload == payload) {
 			list_del(&mem->list);
-			hlist_del(&mem->hash_node);  /* Remove from hash table */
 
 			/* Must free memory while holding lock to prevent UAF in kp_hook_addr_in_region */
 			if (mem->use_vmalloc) {
