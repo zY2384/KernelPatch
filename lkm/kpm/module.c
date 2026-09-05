@@ -623,7 +623,7 @@ static int elf_header_check(struct kp_load_info *info)
 }
 
 struct kp_module modules = { 0 };
-static DEFINE_MUTEX(module_mutex);  /* 替代错误的 RCU 用法 */
+static DEFINE_MUTEX(kp_module_mutex);  /* 替代错误的 RCU 用法，避免与内核全局变量冲突 */
 static spinlock_t module_lookup_lock;  /* 用于查找操作的轻量锁 */
 
 /* Set while a KPM's init runs: during that window the module is not yet on
@@ -656,7 +656,7 @@ bool kp_kpm_cfi_allowed_addr(unsigned long addr)
 	if (!READ_ONCE(kp_kpm_ready))
 		return false;
 
-	mutex_lock(&module_mutex);
+	mutex_lock(&kp_module_mutex);
 	list_for_each_entry(pos, &modules.list, list) {
 		start = (unsigned long)pos->start;
 		end = start + pos->size;
@@ -665,7 +665,7 @@ bool kp_kpm_cfi_allowed_addr(unsigned long addr)
 			break;
 		}
 	}
-	mutex_unlock(&module_mutex);
+	mutex_unlock(&kp_module_mutex);
 	if (ok)
 		return true;
 
@@ -739,7 +739,7 @@ int kp_kpm_safe_kallsyms_on_each_symbol(kp_kallsyms_cb_t fn, void *data)
 	}
 }
 
-/* 内部版本：调用者必须已持有 module_mutex */
+/* 内部版本：调用者必须已持有 kp_module_mutex */
 static struct kp_module *kp_find_module_locked(const char *name)
 {
 	struct kp_module *pos;
@@ -755,15 +755,15 @@ static struct kp_module *kp_find_module(const char *name)
 {
 	struct kp_module *pos;
 
-	mutex_lock(&module_mutex);
+	mutex_lock(&kp_module_mutex);
 	list_for_each_entry(pos, &modules.list, list)
 	{
 		if (!strcmp(name, pos->info.name)) {
-			mutex_unlock(&module_mutex);
+			mutex_unlock(&kp_module_mutex);
 			return pos;
 		}
 	}
-	mutex_unlock(&module_mutex);
+	mutex_unlock(&kp_module_mutex);
 	return 0;
 }
 
@@ -786,12 +786,12 @@ long kp_load_module(const void *data, int len, const char *args, const char *eve
 	if ((rc = setup_load_info(info)))
 		goto out;
 
-	mutex_lock(&module_mutex);
+	mutex_lock(&kp_module_mutex);
 
 	if (kp_find_module_locked(info->info.name)) {
 		logkfd("%s exist\n", info->info.name);
 		set_load_error(info, "module already exists");
-		mutex_unlock(&module_mutex);
+		mutex_unlock(&kp_module_mutex);
 		rc = -EEXIST;
 		goto out;
 	}
@@ -866,7 +866,7 @@ long kp_load_module(const void *data, int len, const char *args, const char *eve
 	if (!rc) {
 		logkfi("[%s] succeed with [%s]\n", mod->info.name, args ? args : "");
 		list_add_tail(&mod->list, &modules.list);
-		mutex_unlock(&module_mutex);
+		mutex_unlock(&kp_module_mutex);
 		goto out;
 	} else {
 		set_load_error(info, "module init failed");
@@ -874,7 +874,7 @@ long kp_load_module(const void *data, int len, const char *args, const char *eve
 		       args ? args : "", rc);
 		if (mod->exit)
 			kp_call_exit(mod->exit, reserved);
-		mutex_unlock(&module_mutex);
+		mutex_unlock(&kp_module_mutex);
 	}
 
 free:
@@ -898,7 +898,7 @@ long kp_unload_module(const char *name, void __user *reserved)
 	long rc = 0;
 	struct kp_module *mod;
 
-	mutex_lock(&module_mutex);
+	mutex_lock(&kp_module_mutex);
 
 	mod = kp_find_module_locked(name);  /* 使用锁定版本 */
 	if (!mod) {
@@ -937,7 +937,7 @@ long kp_unload_module(const char *name, void __user *reserved)
 	logkfi("name: %s, rc: %ld\n", name, rc);
 
 out:
-	mutex_unlock(&module_mutex);
+	mutex_unlock(&kp_module_mutex);
 	return rc;
 }
 
@@ -1005,7 +1005,7 @@ long kp_module_control0(const char *name, const char *ctl_args, char __user *out
 	long rc = 0;
 	struct kp_module *mod;
 
-	mutex_lock(&module_mutex);
+	mutex_lock(&kp_module_mutex);
 
 	mod = kp_find_module_locked(name);
 	if (!mod) {
@@ -1032,7 +1032,7 @@ long kp_module_control0(const char *name, const char *ctl_args, char __user *out
 
 	logkfi("name: %s, rc: %ld\n", name, rc);
 out:
-	mutex_unlock(&module_mutex);
+	mutex_unlock(&kp_module_mutex);
 	return rc;
 }
 
@@ -1042,7 +1042,7 @@ long kp_module_control1(const char *name, void *a1, void *a2, void *a3)
 	long rc = 0;
 	struct kp_module *mod;
 
-	mutex_lock(&module_mutex);
+	mutex_lock(&kp_module_mutex);
 
 	mod = kp_find_module_locked(name);
 	if (!mod) {
@@ -1060,7 +1060,7 @@ long kp_module_control1(const char *name, void *a1, void *a2, void *a3)
 
 	logkfi("name: %s, rc: %ld\n", name, rc);
 out:
-	mutex_unlock(&module_mutex);
+	mutex_unlock(&kp_module_mutex);
 	return rc;
 }
 
@@ -1072,7 +1072,7 @@ long kp_notify_modules_event(const char *event, const char *args, void __user *r
 	long result = 0;
 	int count = 0;
 
-	mutex_lock(&module_mutex);
+	mutex_lock(&kp_module_mutex);
 
 	struct kp_module *pos;
 	list_for_each_entry(pos, &modules.list, list)
@@ -1087,13 +1087,13 @@ long kp_notify_modules_event(const char *event, const char *args, void __user *r
 		count++;
 	}
 
-	mutex_unlock(&module_mutex);
+	mutex_unlock(&kp_module_mutex);
 	return result ?: count;
 }
 
 int kp_get_module_nums(void)
 {
-	mutex_lock(&module_mutex);
+	mutex_lock(&kp_module_mutex);
 
 	struct kp_module *pos;
 	int n = 0;
@@ -1102,7 +1102,7 @@ int kp_get_module_nums(void)
 		n++;
 	}
 
-	mutex_unlock(&module_mutex);
+	mutex_unlock(&kp_module_mutex);
 
 	logkfd("%d\n", n);
 	return n;
@@ -1117,7 +1117,7 @@ int kp_list_modules(char *out_names, int size)
 	struct kp_module *pos;
 	int off = 0;
 
-	mutex_lock(&module_mutex);
+	mutex_lock(&kp_module_mutex);
 
 	list_for_each_entry(pos, &modules.list, list)
 	{
@@ -1126,7 +1126,7 @@ int kp_list_modules(char *out_names, int size)
 	if (off > 0)
 		out_names[off - 1] = '\0';
 
-	mutex_unlock(&module_mutex);
+	mutex_unlock(&kp_module_mutex);
 	return off;
 }
 
@@ -1138,11 +1138,11 @@ int kp_get_module_info(const char *name, char *out_info, int size)
 	struct kp_module *mod;
 	int sz;
 
-	mutex_lock(&module_mutex);
+	mutex_lock(&kp_module_mutex);
 
 	mod = kp_find_module_locked(name);
 	if (!mod) {
-		mutex_unlock(&module_mutex);
+		mutex_unlock(&kp_module_mutex);
 		return -ENOENT;
 	}
 
@@ -1153,21 +1153,21 @@ int kp_get_module_info(const char *name, char *out_info, int size)
 			  "author=%s\n"
 			  "description=%s\n"
 			  "args=%s\n",
-			  mod->info.name, mod->info.version, mod->info.license, mod->author,
+			  mod->info.name, mod->info.version, mod->info.license, mod->info.author,
 			  mod->info.description, mod->args ? mod->args : "");
 
 	if (sz > 0)
 		out_info[sz - 1] = '\0';
 	logkfd("%s", out_info);
 
-	mutex_unlock(&module_mutex);
+	mutex_unlock(&kp_module_mutex);
 	return sz;
 }
 
 int kp_kpm_init(void)
 {
 	INIT_LIST_HEAD(&modules.list);
-	mutex_init(&module_mutex);  /* 初始化互斥锁 */
+	mutex_init(&kp_module_mutex);  /* 初始化互斥锁 */
 	spin_lock_init(&module_lookup_lock);
 	kp_kpm_symbols_init();
 
