@@ -2,6 +2,7 @@
 /* Reuse KernelPatch's ARM64 relocation and hook-chain engine. */
 #include <linux/compiler.h>
 #include <linux/types.h>
+#include <asm/cacheflush.h>
 
 #ifndef __noinline
 #define __noinline noinline
@@ -36,5 +37,15 @@ static hook_err_t hook_chain_prepare(uint32_t *transit, int32_t argno)
 	transit[3] = ARM64_NOP;
 	transit[4] = (uint64_t)chain;
 	transit[5] = (uint64_t)chain >> 32;
-	return branch_absolute(&transit[6], target) ? HOOK_NO_ERR : -HOOK_TRANSIT_NO_MEM;
+	branch_absolute(&transit[6], target);
+
+	/* Ensure other CPU cores see the new instructions before they can be
+	 * fetched via the hooked origin. Mirrors the pattern in
+	 * kp_kpm_safe_kallsyms_on_each_symbol. */
+	dsb(ishst);
+	asm volatile("ic iallu" ::: "memory");
+	dsb(ish);
+	isb();
+
+	return HOOK_NO_ERR;
 }
