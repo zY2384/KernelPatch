@@ -773,6 +773,7 @@ long kp_load_module(const void *data, int len, const char *args, const char *eve
 	struct kp_load_info load_info = { .len = len, .hdr = data };
 	struct kp_load_info *info = &load_info;
 	long rc = 0;
+	struct kp_module *mod;
 
 	if (!kp_module_alloc && !kp_execmem_alloc) {
 		set_load_error(info, "executable memory allocator unavailable");
@@ -795,7 +796,7 @@ long kp_load_module(const void *data, int len, const char *args, const char *eve
 		goto out;
 	}
 
-	struct kp_module *mod = (struct kp_module *)kzalloc(sizeof(struct kp_module), GFP_KERNEL);
+	mod = (struct kp_module *)kzalloc(sizeof(struct kp_module), GFP_KERNEL);
 	if (!mod) {
 		set_load_error(info, "allocate module state failed");
 		rc = -ENOMEM;
@@ -894,10 +895,12 @@ long kp_unload_module(const char *name, void __user *reserved)
 		return -EINVAL;
 	logkfe("name: %s\n", name);
 
-	mutex_lock(&module_mutex);
 	long rc = 0;
+	struct kp_module *mod;
 
-	struct kp_module *mod = kp_find_module_locked(name);  /* 使用锁定版本 */
+	mutex_lock(&module_mutex);
+
+	mod = kp_find_module_locked(name);  /* 使用锁定版本 */
 	if (!mod) {
 		rc = -ENOENT;
 		goto out;
@@ -999,10 +1002,12 @@ long kp_module_control0(const char *name, const char *ctl_args, char __user *out
 
 	logkfi("name %s, args: %s\n", name, ctl_args);
 
-	mutex_lock(&module_mutex);
 	long rc = 0;
+	struct kp_module *mod;
 
-	struct kp_module *mod = kp_find_module_locked(name);
+	mutex_lock(&module_mutex);
+
+	mod = kp_find_module_locked(name);
 	if (!mod) {
 		rc = -ENOENT;
 		goto out;
@@ -1034,10 +1039,12 @@ out:
 long kp_module_control1(const char *name, void *a1, void *a2, void *a3)
 {
 	logkfi("name %s, a1: %px, a2: %px, a3: %px\n", name, a1, a2, a3);
-	mutex_lock(&module_mutex);
 	long rc = 0;
+	struct kp_module *mod;
 
-	struct kp_module *mod = kp_find_module_locked(name);
+	mutex_lock(&module_mutex);
+
+	mod = kp_find_module_locked(name);
 	if (!mod) {
 		rc = -ENOENT;
 		goto out;
@@ -1107,10 +1114,11 @@ int kp_list_modules(char *out_names, int size)
 		return -EINVAL;
 	out_names[0] = '\0';
 
-	mutex_lock(&module_mutex);
-
 	struct kp_module *pos;
 	int off = 0;
+
+	mutex_lock(&module_mutex);
+
 	list_for_each_entry(pos, &modules.list, list)
 	{
 		off += snprintf(out_names + off, size - 1 - off, "%s\n", pos->info.name);
@@ -1127,15 +1135,18 @@ int kp_get_module_info(const char *name, char *out_info, int size)
 	if (size <= 0)
 		return 0;
 
+	struct kp_module *mod;
+	int sz;
+
 	mutex_lock(&module_mutex);
 
-	struct kp_module *mod = kp_find_module_locked(name);
+	mod = kp_find_module_locked(name);
 	if (!mod) {
 		mutex_unlock(&module_mutex);
 		return -ENOENT;
 	}
 
-	int sz = snprintf(out_info, size - 1,
+	sz = snprintf(out_info, size - 1,
 			  "name=%s\n"
 			  "version=%s\n"
 			  "license=%s\n"
