@@ -2,8 +2,6 @@
 /* LKM backends required by kernel/base/hook.c. */
 #include <linux/errno.h>
 #include <linux/list.h>
-// hlist definitions included via linux/list.h
-#include <linux/hash.h>
 #include <linux/mutex.h>
 #include <linux/slab.h>
 #include <linux/string.h>
@@ -16,16 +14,11 @@
 #include "../infra/patch_memory.h"
 #include "../infra/symbol_resolver.h"
 
-/* Maximum size for kmalloc (avoids page allocation overhead) */
-#define KP_HOOK_KMALLOC_MAX (PAGE_SIZE / 2)
-
 struct kp_hook_mem {
 	struct list_head list;
 	uintptr_t origin;
 	enum hook_type type;
 	void *region;
-	size_t size;                  /* Actual allocated size for precise checking */
-	bool use_vmalloc;             /* Track allocation method for precise free */
 	union {
 		hook_t hook;
 		hook_chain_t chain;
@@ -94,30 +87,23 @@ static void kp_hook_flush_all(void)
 		kp_hook_flush_icache_all();
 }
 
-/* Check if @addr falls within any hook memory region.
- * Uses list traversal with precise size-based checking. */
 bool kp_hook_addr_in_region(unsigned long addr)
 {
 	struct kp_hook_mem *mem;
+	bool found = false;
 
 	mutex_lock(&kp_hook_lock);
 	list_for_each_entry(mem, &kp_hook_mems, list) {
 		unsigned long start = (unsigned long)mem->region;
-		unsigned long end = start + mem->size;
+		unsigned long end = start + PAGE_SIZE;
 
 		if (mem->region && addr >= start && addr < end) {
-			mutex_unlock(&kp_hook_lock);
-			return true;
+			found = true;
+			break;
 		}
 	}
 	mutex_unlock(&kp_hook_lock);
-	return false;
-}
-
-/* Exported for compatibility */
-bool kp_hook_runtime_contains_addr(unsigned long addr)
-{
-	return kp_hook_addr_in_region(addr);
+	return found;
 }
 
 int kp_hook_runtime_init(void)
@@ -161,43 +147,15 @@ void *hook_mem_zalloc(uintptr_t origin, enum hook_type type)
 	mem = kzalloc(sizeof(*mem), GFP_KERNEL);
 	if (!mem)
 		return NULL;
-
-	/* Adaptive allocation: kmalloc for small, module_alloc for large */
-	if (size <= KP_HOOK_KMALLOC_MAX) {
-		/* Small allocation: use kmalloc (page-aligned internally) */
-		mem->region = kmalloc(size, GFP_KERNEL | __GFP_NOWARN);
-		if (!mem->region) {
-			/* Fallback to vmalloc if kmalloc fails */
-			mem->region = vmalloc(size);
-			if (!mem->region) {
-				kfree(mem);
-				return NULL;
-			}
-			mem->use_vmalloc = true;
-		} else {
-			mem->use_vmalloc = false;
-		}
-		/* Mark as executable - critical for code execution */
-		if (kp_hook_set_memory_x) {
-			unsigned long pages = (size + PAGE_SIZE - 1) >> PAGE_SHIFT;
-			kp_hook_set_memory_x((unsigned long)mem->region, pages);
-		}
-	} else {
-		/* Large allocation: use module_alloc + set_memory_x */
-		mem->region = kp_hook_exec_alloc(size);
-		if (!mem->region) {
-			kfree(mem);
-			return NULL;
-		}
-		mem->use_vmalloc = false;
+	mem->region = kp_hook_exec_alloc(PAGE_ALIGN(size));
+	if (!mem->region) {
+		kfree(mem);
+		return NULL;
 	}
-
-	memset(mem->region, 0, size);
+	memset(mem->region, 0, PAGE_ALIGN(size));
 	mem->payload = mem->region;
 	mem->origin = origin;
 	mem->type = type;
-	mem->size = size;  /* Store actual size for precise checking */
-
 	mutex_lock(&kp_hook_lock);
 	list_add_tail(&mem->list, &kp_hook_mems);
 	mutex_unlock(&kp_hook_lock);
@@ -228,17 +186,9 @@ void hook_mem_free(void *payload)
 	list_for_each_entry_safe(mem, tmp, &kp_hook_mems, list) {
 		if (mem->payload == payload) {
 			list_del(&mem->list);
-
-			/* Must free memory while holding lock to prevent UAF in kp_hook_addr_in_region */
-			if (mem->use_vmalloc) {
-				vfree(mem->region);
-			} else if (mem->size <= KP_HOOK_KMALLOC_MAX) {
-				kfree(mem->region);
-			} else {
-				kp_hook_exec_free(mem->region);
-			}
-			kfree(mem);
 			mutex_unlock(&kp_hook_lock);
+			kp_hook_exec_free(mem->region);
+			kfree(mem);
 			return;
 		}
 	}

@@ -4,8 +4,7 @@
 
 int kp_hook_runtime_init(void);
 
-/* Check if @addr falls within any hook memory region allocated by hook_mem_zalloc().
- * Uses list traversal with precise size-based range checking. */
+/* True if @addr lies in a hook trampoline page allocated by hook_mem_zalloc(). */
 bool kp_hook_addr_in_region(unsigned long addr);
 
 #endif

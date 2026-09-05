@@ -710,11 +710,11 @@ int kp_kpm_safe_kallsyms_on_each_symbol(kp_kallsyms_cb_t fn, void *data)
 	if (!kp_callback_tramp || !kp_kpm_cfi_allowed_addr((unsigned long)fn))
 		return kp_real_kallsyms_on_each_symbol(fn, data);
 
-	/* 使用当前 CPU 的槽位 (每页有多个槽位) */
+	/* Use current CPU's dedicated slot - no race with other CPUs */
 	int cpu = smp_processor_id();
-	int slot_idx = cpu % 4;  /* 最多支持 4 个并发 trampoline */
-	u32 *slot = (u32 *)kp_callback_tramp + (2 + slot_idx * 4);  /* page + 8 + idx*16 */
-	u32 *pad = slot - 2;  /* 前 2 个字用作 padding */
+	/* Each slot is 16 bytes (2 padding + 2 instructions) */
+	u32 *slot = (u32 *)kp_callback_tramp + 2 + cpu * 4;  /* page + 8 + cpu*16 */
+	u32 *pad = slot - 2;  /*前 2 个字用作 padding */
 	long off = (long)((unsigned long)fn - ((unsigned long)slot + 4));
 
 	pr_emerg(KPLKM_TAG ": kallsyms safe: fn=%px tramp=%px off=%ld cpu=%d\n",
@@ -1191,21 +1191,29 @@ int kp_kpm_init(void)
 		return -ENOSYS;
 	}
 
-	/* One RWX page to hold the bti-c trampoline for KPM kallsyms callbacks.
-	 * GKI 5.10+ module_alloc returns PAGE_KERNEL (NX), so make it executable
-	 * like the KPM images. */
-	kp_callback_tramp = kp_malloc_exec(PAGE_SIZE);
+	/* Use per-CPU trampoline slots to avoid races on multi-core systems.
+	 * Each CPU gets its own 16-byte slot in the trampoline page.
+	 * We allocate enough pages to hold slots for all possible CPUs. */
+	int max_cpus = num_possible_cpus();
+	if (max_cpus < 1)
+		max_cpus = 1;
+	int tramp_slots = max_cpus;
+	unsigned long tramp_pages = (tramp_slots * 16 + PAGE_SIZE - 1) >> PAGE_SHIFT;
+	if (tramp_pages < 1)
+		tramp_pages = 1;
+
+	kp_callback_tramp = kp_malloc_exec(PAGE_SIZE * tramp_pages);
 	if (kp_callback_tramp) {
-		kp_callback_tramp_size = PAGE_SIZE;
+		kp_callback_tramp_size = PAGE_SIZE * tramp_pages;
 		if (kp_set_memory_x) {
-			int xret = kp_do_set_memory_x((unsigned long)kp_callback_tramp, 1);
+			int xret = kp_do_set_memory_x((unsigned long)kp_callback_tramp, tramp_pages);
 			if (xret)
-				logke("callback trampoline set_memory_x(%px) = %d\n",
-				      kp_callback_tramp, xret);
+				logke("callback trampoline set_memory_x(%px, %ld) = %d\n",
+				      kp_callback_tramp, tramp_pages, xret);
 		}
 		/* module_alloc may return PXN/NX; clear PXN/UXN/GP like KPM images */
-		kp_clear_bti_gp((unsigned long)kp_callback_tramp, PAGE_SIZE);
-		memset(kp_callback_tramp, 0, PAGE_SIZE);
+		kp_clear_bti_gp((unsigned long)kp_callback_tramp, PAGE_SIZE * tramp_pages);
+		memset(kp_callback_tramp, 0, PAGE_SIZE * tramp_pages);
 	} else {
 		logkw("callback trampoline alloc failed; KPM kallsyms iteration unshielded\n");
 	}
