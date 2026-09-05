@@ -19,6 +19,7 @@
 #define logkfd(fmt, ...) logkd(fmt, ##__VA_ARGS__)
 #else
 #define logkem(fmt, ...) no_printk(KPLKM_TAG ": " fmt, ##__VA_ARGS__)
+#define logki(fmt, ...) no_printk(KPLKM_TAG ": " fmt, ##__VA_ARGS__)
 #define logke(fmt, ...) no_printk(fmt, ##__VA_ARGS__)
 #define logkw(fmt, ...) no_printk(fmt, ##__VA_ARGS__)
 #define logkd(fmt, ...) no_printk(fmt, ##__VA_ARGS__)
