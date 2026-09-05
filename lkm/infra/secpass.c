@@ -58,23 +58,10 @@ static bool kp_target_in_module(unsigned long target)
 }
 
 
-/* Check if the CFI-mismatch target is in LKM-controlled memory. */
+// 原版过滤模式并不完整，因此直接关闭cfi
 static inline bool kp_should_cfi_pass(unsigned long target)
 {
 	return true;
-	// if (kp_target_in_module(target))
-		// return true;
-
-	// if (kp_hook_addr_in_region(target))
-		// return true;
-
-	// /* Loaded / loading KPM images and the callback-trampoline page. KPM code
-	 // * is no registered module, so Qualcomm's find_check_fn() and the KCFI
-	 // * slowpath would otherwise reject it. */
-	// if (kp_kpm_cfi_allowed_addr(target))
-		// return true;
-
-	// return false;
 }
 
 /* ---- find_check_fn (Qualcomm kallsyms/CFI hardening) ------------------ */

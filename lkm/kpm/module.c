@@ -717,7 +717,7 @@ int kp_kpm_safe_kallsyms_on_each_symbol(kp_kallsyms_cb_t fn, void *data)
 	u32 *pad = slot - 2;  /*前 2 个字用作 padding */
 	long off = (long)((unsigned long)fn - ((unsigned long)slot + 4));
 
-	pr_emerg(KPLKM_TAG ": kallsyms safe: fn=%px tramp=%px off=%ld cpu=%d\n",
+	logkem("kallsyms safe: fn=%px tramp=%px off=%ld cpu=%d\n",
 		 (void *)fn, kp_callback_tramp, off, cpu);
 
 	/* 原子性地更新 trampoline：先写 padding，再写指令 */
@@ -734,7 +734,7 @@ int kp_kpm_safe_kallsyms_on_each_symbol(kp_kallsyms_cb_t fn, void *data)
 
 	{
 		int r = kp_real_kallsyms_on_each_symbol((kp_kallsyms_cb_t)(slot + 2), data);
-		pr_emerg(KPLKM_TAG ": kallsyms safe done rc=%d\n", r);
+		logkem("kallsyms safe done rc=%d\n", r);
 		return r;
 	}
 }
@@ -850,18 +850,18 @@ long kp_load_module(const void *data, int len, const char *args, const char *eve
 	kp_flush_kpm_icache(mod->start, mod->size);
 	logkfe("KPM [%s] icache flushed\n", info->info.name);
 
-	pr_emerg(KPLKM_TAG ": KPM [%s] entering init=%px image=%px size=%u\n",
+	logkem("KPM [%s] entering init=%px image=%px size=%u\n",
 		 mod->info.name, mod->init, mod->start, mod->size);
 
 	WRITE_ONCE(kp_loading_mod, mod);
-	pr_emerg(KPLKM_TAG ": KPM [%s] call init fn=%px (*fn)=%px args=%px args0='%s' event='%s'\n",
+	logkem("KPM [%s] call init fn=%px (*fn)=%px args=%px args0='%s' event='%s'\n",
 		 mod->info.name, mod->init,
 		 mod->init ? *(mod_initcall_t *)mod->init : 0,
 		 mod->args, mod->args ? mod->args : "(null)",
 		 event ? event : "(null)");
 	rc = kp_call_init(mod->init, mod->args, event, reserved);
 	WRITE_ONCE(kp_loading_mod, NULL);
-	pr_emerg(KPLKM_TAG ": KPM [%s] init returned %ld\n", mod->info.name, rc);
+	logkem("KPM [%s] init returned %ld\n", mod->info.name, rc);
 
 	if (!rc) {
 		logkfi("[%s] succeed with [%s]\n", mod->info.name, args ? args : "");

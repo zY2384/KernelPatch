@@ -7,7 +7,7 @@
 #ifndef _KP_LKM_H_
 #define _KP_LKM_H_
 
-#include <linux/printk.h>
+#include "log.h"
 #include <linux/version.h>
 
 /* Version. Kbuild reads the repo-root ../version file and passes the three
@@ -37,13 +37,5 @@ static inline long kp_kver(void)
 	return (long)LINUX_VERSION_CODE;
 }
 
-#define KPLKM_TAG "kernelpatch-lkm"
-#define logki(fmt, ...) pr_info(KPLKM_TAG ": " fmt, ##__VA_ARGS__)
-#define logke(fmt, ...) pr_err(KPLKM_TAG ": " fmt, ##__VA_ARGS__)
-#define logkw(fmt, ...) pr_warn(KPLKM_TAG ": " fmt, ##__VA_ARGS__)
-#define logkd(fmt, ...) pr_debug(KPLKM_TAG ": " fmt, ##__VA_ARGS__)
-#define logkfi(fmt, ...) logki(fmt, ##__VA_ARGS__)
-#define logkfe(fmt, ...) logke(fmt, ##__VA_ARGS__)
-#define logkfd(fmt, ...) logkd(fmt, ##__VA_ARGS__)
 
 #endif /* _KP_LKM_H_ */

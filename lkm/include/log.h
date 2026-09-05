@@ -4,29 +4,27 @@
 
 #include <linux/printk.h>
 
-#ifndef logkv
-#define logkv(fmt, ...) pr_debug("kernelpatch-lkm: hook: " fmt, ##__VA_ARGS__)
-#endif
-#ifndef logkd
-#define logkd(fmt, ...) pr_debug("kernelpatch-lkm: " fmt, ##__VA_ARGS__)
-#endif
-#ifndef logkfd
-#define logkfd(fmt, ...) pr_debug("kernelpatch-lkm: %s: " fmt, __func__, ##__VA_ARGS__)
-#endif
-#ifndef logki
-#define logki(fmt, ...) pr_info("kernelpatch-lkm: " fmt, ##__VA_ARGS__)
-#endif
-#ifndef logkfi
-#define logkfi(fmt, ...) pr_info("kernelpatch-lkm: %s: " fmt, __func__, ##__VA_ARGS__)
-#endif
-#ifndef logkw
-#define logkw(fmt, ...) pr_warn("kernelpatch-lkm: " fmt, ##__VA_ARGS__)
-#endif
-#ifndef logke
-#define logke(fmt, ...) pr_err("kernelpatch-lkm: " fmt, ##__VA_ARGS__)
-#endif
-#ifndef logkfe
-#define logkfe(fmt, ...) pr_err("kernelpatch-lkm: %s: " fmt, __func__, ##__VA_ARGS__)
+
+//#define KP_LOG_ENABLE
+
+#define KPLKM_TAG "kernelpatch-lkm"
+#ifdef KP_LOG_ENABLE
+#define logkem(fmt, ...) pr_emerg(KPLKM_TAG ": " fmt, ##__VA_ARGS__)
+#define logki(fmt, ...) pr_info(KPLKM_TAG ": " fmt, ##__VA_ARGS__)
+#define logke(fmt, ...) pr_err(KPLKM_TAG ": " fmt, ##__VA_ARGS__)
+#define logkw(fmt, ...) pr_warn(KPLKM_TAG ": " fmt, ##__VA_ARGS__)
+#define logkd(fmt, ...) pr_debug(KPLKM_TAG ": " fmt, ##__VA_ARGS__)
+#define logkfi(fmt, ...) logki(fmt, ##__VA_ARGS__)
+#define logkfe(fmt, ...) logke(fmt, ##__VA_ARGS__)
+#define logkfd(fmt, ...) logkd(fmt, ##__VA_ARGS__)
+#else
+#define logkem(fmt, ...) no_printk(KPLKM_TAG ": " fmt, ##__VA_ARGS__)
+#define logke(fmt, ...) no_printk(fmt, ##__VA_ARGS__)
+#define logkw(fmt, ...) no_printk(fmt, ##__VA_ARGS__)
+#define logkd(fmt, ...) no_printk(fmt, ##__VA_ARGS__)
+#define logkfi(fmt, ...) no_printk(fmt, ##__VA_ARGS__)
+#define logkfe(fmt, ...) no_printk(fmt, ##__VA_ARGS__)
+#define logkfd(fmt, ...) no_printk(fmt, ##__VA_ARGS__)
 #endif
 
 #endif

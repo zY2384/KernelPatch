@@ -10,8 +10,8 @@
 
 #include <linux/elf.h>
 #include <linux/errno.h>
-#include <linux/printk.h>
 #include <linux/types.h>
+#include "../include/kp_lkm.h"
 
 enum kp_aarch64_reloc_op {
 	RELOC_OP_NONE,
@@ -33,7 +33,7 @@ static u64 do_reloc(enum kp_aarch64_reloc_op reloc_op, void *place, u64 val)
 		return 0;
 	}
 
-	pr_err("do_reloc: unknown relocation operation %d\n", reloc_op);
+	logke("do_reloc: unknown relocation operation %d\n", reloc_op);
 	return 0;
 }
 
@@ -53,7 +53,7 @@ static int reloc_data(enum kp_aarch64_reloc_op op, void *place, u64 val, int len
 		*(s64 *)place = sval;
 		break;
 	default:
-		pr_err("Invalid length (%d) for data relocation\n", len);
+		logke("Invalid length (%d) for data relocation\n", len);
 		return 0;
 	}
 
@@ -286,7 +286,7 @@ int kp_apply_relocate_add(Elf64_Shdr *sechdrs, const char *strtab, unsigned int 
 			ovf = reloc_insn_imm(RELOC_OP_PREL, loc, val, 2, 26, KP_INSN_IMM_26);
 			break;
 		default:
-			pr_err("unsupported RELA relocation: %llu\n", ELF64_R_TYPE(rel[i].r_info));
+			logke("unsupported RELA relocation: %llu\n", ELF64_R_TYPE(rel[i].r_info));
 			return -ENOEXEC;
 		}
 
@@ -295,6 +295,6 @@ int kp_apply_relocate_add(Elf64_Shdr *sechdrs, const char *strtab, unsigned int 
 	}
 	return 0;
 overflow:
-	pr_err("overflow in relocation type %d val %llx\n", (int)ELF64_R_TYPE(rel[i].r_info), val);
+	logke("overflow in relocation type %d val %llx\n", (int)ELF64_R_TYPE(rel[i].r_info), val);
 	return -ENOEXEC;
 }
