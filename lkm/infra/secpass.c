@@ -63,7 +63,7 @@ static bool kp_should_cfi_pass(unsigned long target)
 	if (kp_target_in_module(target))
 		return true;
 
-	if (kp_hook_runtime_contains_addr(target))
+	if (kp_hook_addr_in_region(target))
 		return true;
 
 	/* Loaded / loading KPM images and the callback-trampoline page. KPM code

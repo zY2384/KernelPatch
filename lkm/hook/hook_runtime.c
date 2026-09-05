@@ -2,6 +2,8 @@
 /* LKM backends required by kernel/base/hook.c. */
 #include <linux/errno.h>
 #include <linux/list.h>
+#include <linux/hlist.h>
+#include <linux/hash.h>
 #include <linux/mutex.h>
 #include <linux/slab.h>
 #include <linux/string.h>
@@ -15,10 +17,13 @@
 #include "../infra/symbol_resolver.h"
 
 struct kp_hook_mem {
-	struct list_head list;
+	struct hlist_node hash_node;  /* Hash table node */
+	struct list_head list;        /* Maintenance list (for cleanup) */
 	uintptr_t origin;
 	enum hook_type type;
 	void *region;
+	size_t size;                  /* Actual allocated size for precise checking */
+	bool use_vmalloc;             /* Track allocation method for precise free */
 	union {
 		hook_t hook;
 		hook_chain_t chain;
@@ -28,6 +33,7 @@ struct kp_hook_mem {
 
 static LIST_HEAD(kp_hook_mems);
 static DEFINE_MUTEX(kp_hook_lock);
+static struct hlist_head kp_hook_hash[KP_HOOK_HASH_SIZE];  /* Hash table for fast lookup */
 /* Executable-memory allocators. module_alloc exists through 6.10 (__weak in
  * 6.6); 6.11+ replaced it with execmem_alloc() (EXECMEM_MODULE_TEXT).
  * vmalloc is the universal last resort (still needs set_memory_x to be
@@ -87,23 +93,31 @@ static void kp_hook_flush_all(void)
 		kp_hook_flush_icache_all();
 }
 
-bool kp_hook_runtime_contains_addr(unsigned long addr)
+/* Hash function for hook address lookup */
+static inline int kp_hook_hash_addr(unsigned long addr)
+{
+	return hash_long(addr, KP_HOOK_HASH_BITS) % KP_HOOK_HASH_SIZE;
+}
+
+/* Check if @addr falls within any hook memory region.
+ * Uses hash table for O(1) average lookup with precise size-based checking. */
+bool kp_hook_addr_in_region(unsigned long addr)
 {
 	struct kp_hook_mem *mem;
-	bool found = false;
+	int bucket = kp_hook_hash_addr(addr);
 
 	mutex_lock(&kp_hook_lock);
-	list_for_each_entry(mem, &kp_hook_mems, list) {
+	hlist_for_each_entry(mem, &kp_hook_hash[bucket], hash_node) {
 		unsigned long start = (unsigned long)mem->region;
-		unsigned long end = start + PAGE_SIZE;
+		unsigned long end = start + mem->size;
 
 		if (mem->region && addr >= start && addr < end) {
-			found = true;
-			break;
+			mutex_unlock(&kp_hook_lock);
+			return true;
 		}
 	}
 	mutex_unlock(&kp_hook_lock);
-	return found;
+	return false;
 }
 
 int kp_hook_runtime_init(void)
@@ -147,17 +161,45 @@ void *hook_mem_zalloc(uintptr_t origin, enum hook_type type)
 	mem = kzalloc(sizeof(*mem), GFP_KERNEL);
 	if (!mem)
 		return NULL;
-	mem->region = kp_hook_exec_alloc(PAGE_ALIGN(size));
-	if (!mem->region) {
-		kfree(mem);
-		return NULL;
+
+	/* Adaptive allocation: kmalloc for small, module_alloc for large */
+	if (size <= KP_HOOK_KMALLOC_MAX) {
+		/* Small allocation: use kmalloc (page-aligned internally) */
+		mem->region = kmalloc(size, GFP_KERNEL | __GFP_NOWARN);
+		if (!mem->region) {
+			/* Fallback to vmalloc if kmalloc fails */
+			mem->region = vmalloc(size);
+			if (!mem->region) {
+				kfree(mem);
+				return NULL;
+			}
+			mem->use_vmalloc = true;
+		} else {
+			mem->use_vmalloc = false;
+		}
+	} else {
+		/* Large allocation: use module_alloc + set_memory_x */
+		mem->region = kp_hook_exec_alloc(size);
+		if (!mem->region) {
+			kfree(mem);
+			return NULL;
+		}
+		mem->use_vmalloc = false;
 	}
-	memset(mem->region, 0, PAGE_ALIGN(size));
+
+	memset(mem->region, 0, size);
 	mem->payload = mem->region;
 	mem->origin = origin;
 	mem->type = type;
+	mem->size = size;  /* Store actual size for precise checking */
+
 	mutex_lock(&kp_hook_lock);
 	list_add_tail(&mem->list, &kp_hook_mems);
+
+	/* Insert into hash table for fast lookup */
+	int bucket = kp_hook_hash_addr((unsigned long)mem->region);
+	hlist_add_head(&mem->hash_node, &kp_hook_hash[bucket]);
+
 	mutex_unlock(&kp_hook_lock);
 	return mem->payload;
 }
@@ -186,8 +228,17 @@ void hook_mem_free(void *payload)
 	list_for_each_entry_safe(mem, tmp, &kp_hook_mems, list) {
 		if (mem->payload == payload) {
 			list_del(&mem->list);
+			hlist_del(&mem->hash_node);  /* Remove from hash table */
 			mutex_unlock(&kp_hook_lock);
-			kp_hook_exec_free(mem->region);
+
+			/* Precise free based on allocation type */
+			if (mem->use_vmalloc) {
+				vfree(mem->region);
+			} else if (mem->size <= KP_HOOK_KMALLOC_MAX) {
+				kfree(mem->region);
+			} else {
+				kp_hook_exec_free(mem->region);
+			}
 			kfree(mem);
 			return;
 		}
