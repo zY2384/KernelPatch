@@ -86,6 +86,9 @@ int __init kernelpatch_init(void)
 		return rc;
 
 	logki("KernelPatch LKM ready\n");
+	
+	kobject_del(&THIS_MODULE->mkobj.kobj);
+	
 	return 0;
 }
 
