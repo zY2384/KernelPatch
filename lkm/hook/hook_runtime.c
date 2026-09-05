@@ -107,7 +107,8 @@ static inline int kp_hook_hash_addr(unsigned long addr)
 }
 
 /* Check if @addr falls within any hook memory region.
- * Uses hash table for O(1) average lookup with precise size-based checking. */
+ * Uses hash table for O(1) average lookup with precise size-based checking.
+ */
 bool kp_hook_addr_in_region(unsigned long addr)
 {
 	struct kp_hook_mem *mem;
