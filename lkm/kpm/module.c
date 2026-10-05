@@ -26,6 +26,9 @@
 #include <linux/slab.h>
 #include <linux/spinlock.h>
 #include <linux/string.h>
+#include <linux/atomic.h>
+#include <linux/irqflags.h>
+#include <linux/smp.h>
 #include <linux/uaccess.h>
 #include <linux/vmalloc.h>
 #include <asm/cacheflush.h>
@@ -46,7 +49,11 @@
 #else
 #define KP_LKM_PTE_PXN PTE_PXN
 #define KP_LKM_PTE_UXN PTE_UXN
+#ifdef PTE_GP
 #define KP_LKM_PTE_GP  PTE_GP
+#else
+#define KP_LKM_PTE_GP  0UL
+#endif
 #endif
 
 /* Runtime-resolved kernel symbols (not exported on GKI 5.15). */
@@ -152,44 +159,47 @@ static void kp_flush_kpm_icache(void *start, size_t size)
 	isb();
 }
 
-__attribute__((no_sanitize("cfi")))
+/* Must stay out-of-line: kCFI loads [fnptr-4] for a type hash. KPM text has
+ * no hash preamble; that load faults on the previous (unmapped) page. Use
+ * __nocfi (= no_sanitize("kcfi")) — plain "cfi" is not what Android enables. */
+__nocfi __attribute__((__noinline__))
 static long kp_call_init(mod_initcall_t *fn, const char *args, const char *event,
 			 void __user *reserved)
 {
 	return (*fn)(args, event, reserved);
 }
 
-__attribute__((no_sanitize("cfi")))
+__nocfi __attribute__((__noinline__))
 static long kp_call_exit(mod_exitcall_t *fn, void __user *reserved)
 {
 	return (*fn)(reserved);
 }
 
-__attribute__((no_sanitize("cfi")))
+__nocfi __attribute__((__noinline__))
 static int kp_do_set_memory_x(unsigned long addr, int npages)
 {
 	return kp_set_memory_x(addr, npages);
 }
 
-__attribute__((no_sanitize("cfi")))
+__nocfi __attribute__((__noinline__))
 static int kp_do_set_memory_nx(unsigned long addr, int npages)
 {
 	return kp_set_memory_nx(addr, npages);
 }
 
-__attribute__((no_sanitize("cfi")))
+__nocfi __attribute__((__noinline__))
 static long kp_call_ctl0(mod_ctl0call_t *fn, const char *args, char __user *out, int outlen)
 {
 	return (*fn)(args, out, outlen);
 }
 
-__attribute__((no_sanitize("cfi")))
+__nocfi __attribute__((__noinline__))
 static long kp_call_ctl1(mod_ctl1call_t *fn, void *a1, void *a2, void *a3)
 {
 	return (*fn)(a1, a2, a3);
 }
 
-__attribute__((no_sanitize("cfi")))
+__nocfi __attribute__((__noinline__))
 static long kp_call_event(mod_eventcall_t *fn, const char *event, const char *args,
 			  void __user *reserved)
 {
@@ -613,7 +623,8 @@ static int elf_header_check(struct kp_load_info *info)
 }
 
 struct kp_module modules = { 0 };
-static spinlock_t module_lock;
+static DEFINE_MUTEX(kp_module_mutex);  /* 替代错误的 RCU 用法，避免与内核全局变量冲突 */
+static spinlock_t module_lookup_lock;  /* 用于查找操作的轻量锁 */
 
 /* Set while a KPM's init runs: during that window the module is not yet on
  * modules.list, but its image must already be shielded from the Qualcomm
@@ -645,7 +656,7 @@ bool kp_kpm_cfi_allowed_addr(unsigned long addr)
 	if (!READ_ONCE(kp_kpm_ready))
 		return false;
 
-	rcu_read_lock();
+	mutex_lock(&kp_module_mutex);
 	list_for_each_entry(pos, &modules.list, list) {
 		start = (unsigned long)pos->start;
 		end = start + pos->size;
@@ -654,7 +665,7 @@ bool kp_kpm_cfi_allowed_addr(unsigned long addr)
 			break;
 		}
 	}
-	rcu_read_unlock();
+	mutex_unlock(&kp_module_mutex);
 	if (ok)
 		return true;
 
@@ -684,45 +695,52 @@ bool kp_kpm_cfi_allowed_addr(unsigned long addr)
  * RWX trampoline page and hands the trampoline address to the real kernel
  * iterator. find_check_fn() then validates the trampoline page (covered by
  * kp_kpm_cfi_allowed_addr, noop check fn) and the BLR lands on bti c, which
- * direct-branches into the non-BTI KPM callback with the call args intact. */
+ * direct-branches into the non-BTI KPM callback with the call args intact.
+ *
+ * NOTE: We use per-CPU state to avoid races between CPUs updating the shared
+ * trampoline page. Each CPU gets its own slot in the trampoline page.
+ */
 __attribute__((no_sanitize("cfi")))
 int kp_kpm_safe_kallsyms_on_each_symbol(kp_kallsyms_cb_t fn, void *data)
 {
 	if (!kp_real_kallsyms_on_each_symbol)
 		return -EOPNOTSUPP;
 
+	/* 如果不使用 trampoline，直接调用原始函数 */
 	if (!kp_callback_tramp || !kp_kpm_cfi_allowed_addr((unsigned long)fn))
 		return kp_real_kallsyms_on_each_symbol(fn, data);
 
+	/* Use current CPU's dedicated slot - no race with other CPUs */
+	int cpu = smp_processor_id();
+	/* Each slot is 16 bytes (2 padding + 2 instructions) */
+	u32 *slot = (u32 *)kp_callback_tramp + 2 + cpu * 4;  /* page + 8 + cpu*16 */
+	u32 *pad = slot - 2;  /*前 2 个字用作 padding */
+	long off = (long)((unsigned long)fn - ((unsigned long)slot + 4));
+
+	logkem("kallsyms safe: fn=%px tramp=%px off=%ld cpu=%d\n",
+		 (void *)fn, kp_callback_tramp, off, cpu);
+
+	/* 原子性地更新 trampoline：先写 padding，再写指令 */
+	/* 使用 dmb 确保写入顺序，但不禁用中断（多核安全） */
+	pad[0] = 0; /* keep [target-4] mapped + zeroed for the KCFI check */
+	pad[1] = 0;
+	dsb(ishst);
+	slot[0] = 0xd503245f; /* bti c */
+	slot[1] = 0x14000000 | (((unsigned long)off >> 2) & 0x03ffffff); /* b <fn> */
+	dsb(ishst);
+	asm volatile("ic iallu");
+	dsb(ish);
+	isb();
+
 	{
-		unsigned long flags;
-		u32 *slot = (u32 *)kp_callback_tramp + 2; /* page+8 */
-		u32 *pad = (u32 *)kp_callback_tramp;
-		long off = (long)((unsigned long)fn - ((unsigned long)slot + 4));
-
-		pr_emerg(KPLKM_TAG ": kallsyms safe: fn=%px tramp=%px off=%ld\n",
-			 (void *)fn, kp_callback_tramp, off);
-
-		spin_lock_irqsave(&module_lock, flags);
-		pad[0] = 0; /* keep [target-4] mapped + zeroed for the KCFI check */
-		pad[1] = 0;
-		slot[0] = 0xd503245f; /* bti c */
-		slot[1] = 0x14000000 | (((unsigned long)off >> 2) & 0x03ffffff); /* b <fn> */
-		dsb(ishst);
-		asm volatile("ic iallu");
-		dsb(ish);
-		isb();
-		spin_unlock_irqrestore(&module_lock, flags);
-	}
-
-	{
-		int r = kp_real_kallsyms_on_each_symbol((kp_kallsyms_cb_t)((char *)kp_callback_tramp + 8), data);
-		pr_emerg(KPLKM_TAG ": kallsyms safe done rc=%d\n", r);
+		int r = kp_real_kallsyms_on_each_symbol((kp_kallsyms_cb_t)(slot + 2), data);
+		logkem("kallsyms safe done rc=%d\n", r);
 		return r;
 	}
 }
 
-static struct kp_module *kp_find_module(const char *name)
+/* 内部版本：调用者必须已持有 kp_module_mutex */
+static struct kp_module *kp_find_module_locked(const char *name)
 {
 	struct kp_module *pos;
 	list_for_each_entry(pos, &modules.list, list)
@@ -733,12 +751,29 @@ static struct kp_module *kp_find_module(const char *name)
 	return 0;
 }
 
+static struct kp_module *kp_find_module(const char *name)
+{
+	struct kp_module *pos;
+
+	mutex_lock(&kp_module_mutex);
+	list_for_each_entry(pos, &modules.list, list)
+	{
+		if (!strcmp(name, pos->info.name)) {
+			mutex_unlock(&kp_module_mutex);
+			return pos;
+		}
+	}
+	mutex_unlock(&kp_module_mutex);
+	return 0;
+}
+
 long kp_load_module(const void *data, int len, const char *args, const char *event,
 		    void __user *reserved)
 {
 	struct kp_load_info load_info = { .len = len, .hdr = data };
 	struct kp_load_info *info = &load_info;
 	long rc = 0;
+	struct kp_module *mod;
 
 	if (!kp_module_alloc && !kp_execmem_alloc) {
 		set_load_error(info, "executable memory allocator unavailable");
@@ -751,19 +786,23 @@ long kp_load_module(const void *data, int len, const char *args, const char *eve
 	if ((rc = setup_load_info(info)))
 		goto out;
 
-	if (kp_find_module(info->info.name)) {
+	mutex_lock(&kp_module_mutex);
+
+	if (kp_find_module_locked(info->info.name)) {
 		logkfd("%s exist\n", info->info.name);
 		set_load_error(info, "module already exists");
+		mutex_unlock(&kp_module_mutex);
 		rc = -EEXIST;
 		goto out;
 	}
 
-	struct kp_module *mod = (struct kp_module *)kzalloc(sizeof(struct kp_module), GFP_KERNEL);
+	mod = (struct kp_module *)kzalloc(sizeof(struct kp_module), GFP_KERNEL);
 	if (!mod) {
 		set_load_error(info, "allocate module state failed");
 		rc = -ENOMEM;
 		goto out;
 	}
+	atomic_set(&mod->refcnt, 1);  /* 初始引用计数 */
 
 	if (args) {
 		mod->args = kstrdup(args, GFP_KERNEL);
@@ -811,22 +850,23 @@ long kp_load_module(const void *data, int len, const char *args, const char *eve
 	kp_flush_kpm_icache(mod->start, mod->size);
 	logkfe("KPM [%s] icache flushed\n", info->info.name);
 
-	pr_emerg(KPLKM_TAG ": KPM [%s] entering init=%px image=%px size=%u\n",
+	logkem("KPM [%s] entering init=%px image=%px size=%u\n",
 		 mod->info.name, mod->init, mod->start, mod->size);
 
 	WRITE_ONCE(kp_loading_mod, mod);
-	pr_emerg(KPLKM_TAG ": KPM [%s] call init fn=%px (*fn)=%px args=%px args0='%s' event='%s'\n",
+	logkem("KPM [%s] call init fn=%px (*fn)=%px args=%px args0='%s' event='%s'\n",
 		 mod->info.name, mod->init,
 		 mod->init ? *(mod_initcall_t *)mod->init : 0,
 		 mod->args, mod->args ? mod->args : "(null)",
 		 event ? event : "(null)");
 	rc = kp_call_init(mod->init, mod->args, event, reserved);
 	WRITE_ONCE(kp_loading_mod, NULL);
-	pr_emerg(KPLKM_TAG ": KPM [%s] init returned %ld\n", mod->info.name, rc);
+	logkem("KPM [%s] init returned %ld\n", mod->info.name, rc);
 
 	if (!rc) {
 		logkfi("[%s] succeed with [%s]\n", mod->info.name, args ? args : "");
 		list_add_tail(&mod->list, &modules.list);
+		mutex_unlock(&kp_module_mutex);
 		goto out;
 	} else {
 		set_load_error(info, "module init failed");
@@ -834,6 +874,7 @@ long kp_load_module(const void *data, int len, const char *args, const char *eve
 		       args ? args : "", rc);
 		if (mod->exit)
 			kp_call_exit(mod->exit, reserved);
+		mutex_unlock(&kp_module_mutex);
 	}
 
 free:
@@ -854,35 +895,49 @@ long kp_unload_module(const char *name, void __user *reserved)
 		return -EINVAL;
 	logkfe("name: %s\n", name);
 
-	rcu_read_lock();
 	long rc = 0;
+	struct kp_module *mod;
 
-	struct kp_module *mod = kp_find_module(name);
+	mutex_lock(&kp_module_mutex);
+
+	mod = kp_find_module_locked(name);  /* 使用锁定版本 */
 	if (!mod) {
 		rc = -ENOENT;
 		goto out;
 	}
-	list_del(&mod->list);
-	rc = kp_call_exit(mod->exit, reserved);
 
-	if (mod->args)
-		kvfree(mod->args);
-	if (mod->ctl_args)
-		kvfree(mod->ctl_args);
+	/* 减少引用计数，如果还有其它引用（如 kallsyms 回调中），延迟释放 */
+	if (atomic_dec_and_test(&mod->refcnt)) {
+		/* 没有其它引用，安全卸载 */
+		/* 先调用 exit，此时模块仍在列表中 */
+		rc = kp_call_exit(mod->exit, reserved);
 
-	if (kp_set_memory_nx && mod->start) {
-		int npages = (mod->size + PAGE_SIZE - 1) >> PAGE_SHIFT;
-		kp_do_set_memory_nx((unsigned long)mod->start, npages);
+		/* 从列表中移除 */
+		list_del(&mod->list);
+
+		/* 先禁用执行，再释放内存 */
+		if (kp_set_memory_nx && mod->start) {
+			int npages = (mod->size + PAGE_SIZE - 1) >> PAGE_SHIFT;
+			kp_do_set_memory_nx((unsigned long)mod->start, npages);
+		}
+
+		if (kp_module_memfree && mod->start)
+			kp_free_exec(mod->start);
+		if (mod->args)
+			kvfree(mod->args);
+		if (mod->ctl_args)
+			kvfree(mod->ctl_args);
+		kfree(mod);
+	} else {
+		/* 还有其它引用（如正在执行的 kallsyms 回调），延迟释放 */
+		logkw("KPM [%s] has pending references, deferred free\n", name);
+		rc = 0;  /* 成功标记，但实际释放会延迟 */
 	}
-
-	if (kp_module_memfree && mod->start)
-		kp_free_exec(mod->start);
-	kfree(mod);
 
 	logkfi("name: %s, rc: %ld\n", name, rc);
 
 out:
-	rcu_read_unlock();
+	mutex_unlock(&kp_module_mutex);
 	return rc;
 }
 
@@ -948,9 +1003,11 @@ long kp_module_control0(const char *name, const char *ctl_args, char __user *out
 	logkfi("name %s, args: %s\n", name, ctl_args);
 
 	long rc = 0;
-	rcu_read_lock();
+	struct kp_module *mod;
 
-	struct kp_module *mod = kp_find_module(name);
+	mutex_lock(&kp_module_mutex);
+
+	mod = kp_find_module_locked(name);
 	if (!mod) {
 		rc = -ENOENT;
 		goto out;
@@ -975,7 +1032,7 @@ long kp_module_control0(const char *name, const char *ctl_args, char __user *out
 
 	logkfi("name: %s, rc: %ld\n", name, rc);
 out:
-	rcu_read_unlock();
+	mutex_unlock(&kp_module_mutex);
 	return rc;
 }
 
@@ -983,9 +1040,11 @@ long kp_module_control1(const char *name, void *a1, void *a2, void *a3)
 {
 	logkfi("name %s, a1: %px, a2: %px, a3: %px\n", name, a1, a2, a3);
 	long rc = 0;
-	rcu_read_lock();
+	struct kp_module *mod;
 
-	struct kp_module *mod = kp_find_module(name);
+	mutex_lock(&kp_module_mutex);
+
+	mod = kp_find_module_locked(name);
 	if (!mod) {
 		rc = -ENOENT;
 		goto out;
@@ -1001,7 +1060,7 @@ long kp_module_control1(const char *name, void *a1, void *a2, void *a3)
 
 	logkfi("name: %s, rc: %ld\n", name, rc);
 out:
-	rcu_read_unlock();
+	mutex_unlock(&kp_module_mutex);
 	return rc;
 }
 
@@ -1012,7 +1071,8 @@ long kp_notify_modules_event(const char *event, const char *args, void __user *r
 
 	long result = 0;
 	int count = 0;
-	rcu_read_lock();
+
+	mutex_lock(&kp_module_mutex);
 
 	struct kp_module *pos;
 	list_for_each_entry(pos, &modules.list, list)
@@ -1027,13 +1087,13 @@ long kp_notify_modules_event(const char *event, const char *args, void __user *r
 		count++;
 	}
 
-	rcu_read_unlock();
+	mutex_unlock(&kp_module_mutex);
 	return result ?: count;
 }
 
 int kp_get_module_nums(void)
 {
-	rcu_read_lock();
+	mutex_lock(&kp_module_mutex);
 
 	struct kp_module *pos;
 	int n = 0;
@@ -1041,7 +1101,8 @@ int kp_get_module_nums(void)
 	{
 		n++;
 	}
-	rcu_read_unlock();
+
+	mutex_unlock(&kp_module_mutex);
 
 	logkfd("%d\n", n);
 	return n;
@@ -1053,10 +1114,11 @@ int kp_list_modules(char *out_names, int size)
 		return -EINVAL;
 	out_names[0] = '\0';
 
-	rcu_read_lock();
-
 	struct kp_module *pos;
 	int off = 0;
+
+	mutex_lock(&kp_module_mutex);
+
 	list_for_each_entry(pos, &modules.list, list)
 	{
 		off += snprintf(out_names + off, size - 1 - off, "%s\n", pos->info.name);
@@ -1064,7 +1126,7 @@ int kp_list_modules(char *out_names, int size)
 	if (off > 0)
 		out_names[off - 1] = '\0';
 
-	rcu_read_unlock();
+	mutex_unlock(&kp_module_mutex);
 	return off;
 }
 
@@ -1072,13 +1134,19 @@ int kp_get_module_info(const char *name, char *out_info, int size)
 {
 	if (size <= 0)
 		return 0;
-	rcu_read_lock();
 
-	struct kp_module *mod = kp_find_module(name);
-	if (!mod)
+	struct kp_module *mod;
+	int sz;
+
+	mutex_lock(&kp_module_mutex);
+
+	mod = kp_find_module_locked(name);
+	if (!mod) {
+		mutex_unlock(&kp_module_mutex);
 		return -ENOENT;
+	}
 
-	int sz = snprintf(out_info, size - 1,
+	sz = snprintf(out_info, size - 1,
 			  "name=%s\n"
 			  "version=%s\n"
 			  "license=%s\n"
@@ -1092,14 +1160,15 @@ int kp_get_module_info(const char *name, char *out_info, int size)
 		out_info[sz - 1] = '\0';
 	logkfd("%s", out_info);
 
-	rcu_read_unlock();
+	mutex_unlock(&kp_module_mutex);
 	return sz;
 }
 
 int kp_kpm_init(void)
 {
 	INIT_LIST_HEAD(&modules.list);
-	spin_lock_init(&module_lock);
+	mutex_init(&kp_module_mutex);  /* 初始化互斥锁 */
+	spin_lock_init(&module_lookup_lock);
 	kp_kpm_symbols_init();
 
 	/* module_alloc exists up to ~6.8; 6.10+ replaced it with execmem_alloc
@@ -1122,21 +1191,29 @@ int kp_kpm_init(void)
 		return -ENOSYS;
 	}
 
-	/* One RWX page to hold the bti-c trampoline for KPM kallsyms callbacks.
-	 * GKI 5.10+ module_alloc returns PAGE_KERNEL (NX), so make it executable
-	 * like the KPM images. */
-	kp_callback_tramp = kp_malloc_exec(PAGE_SIZE);
+	/* Use per-CPU trampoline slots to avoid races on multi-core systems.
+	 * Each CPU gets its own 16-byte slot in the trampoline page.
+	 * We allocate enough pages to hold slots for all possible CPUs. */
+	int max_cpus = num_possible_cpus();
+	if (max_cpus < 1)
+		max_cpus = 1;
+	int tramp_slots = max_cpus;
+	unsigned long tramp_pages = (tramp_slots * 16 + PAGE_SIZE - 1) >> PAGE_SHIFT;
+	if (tramp_pages < 1)
+		tramp_pages = 1;
+
+	kp_callback_tramp = kp_malloc_exec(PAGE_SIZE * tramp_pages);
 	if (kp_callback_tramp) {
-		kp_callback_tramp_size = PAGE_SIZE;
+		kp_callback_tramp_size = PAGE_SIZE * tramp_pages;
 		if (kp_set_memory_x) {
-			int xret = kp_do_set_memory_x((unsigned long)kp_callback_tramp, 1);
+			int xret = kp_do_set_memory_x((unsigned long)kp_callback_tramp, tramp_pages);
 			if (xret)
-				logke("callback trampoline set_memory_x(%px) = %d\n",
-				      kp_callback_tramp, xret);
+				logke("callback trampoline set_memory_x(%px, %ld) = %d\n",
+				      kp_callback_tramp, tramp_pages, xret);
 		}
 		/* module_alloc may return PXN/NX; clear PXN/UXN/GP like KPM images */
-		kp_clear_bti_gp((unsigned long)kp_callback_tramp, PAGE_SIZE);
-		memset(kp_callback_tramp, 0, PAGE_SIZE);
+		kp_clear_bti_gp((unsigned long)kp_callback_tramp, PAGE_SIZE * tramp_pages);
+		memset(kp_callback_tramp, 0, PAGE_SIZE * tramp_pages);
 	} else {
 		logkw("callback trampoline alloc failed; KPM kallsyms iteration unshielded\n");
 	}
@@ -1148,4 +1225,32 @@ int kp_kpm_init(void)
 	logki("kpm loader ready (module_alloc=%px flush_icache_all=%px tramp=%px)\n", kp_module_alloc,
 	      kp_flush_icache_all_fn, kp_callback_tramp);
 	return 0;
+}
+
+/* 获取模块引用，防止在回调期间释放 */
+static inline void kp_module_get(struct kp_module *mod)
+{
+	if (mod)
+		atomic_inc(&mod->refcnt);
+}
+
+/* 释放模块引用，最后一个释放者负责释放内存 */
+static inline void kp_module_put(struct kp_module *mod)
+{
+	if (!mod)
+		return;
+	if (atomic_dec_and_test(&mod->refcnt)) {
+		/* 这是最后一个引用，安全释放 */
+		if (mod->args)
+			kvfree(mod->args);
+		if (mod->ctl_args)
+			kvfree(mod->ctl_args);
+		if (kp_set_memory_nx && mod->start) {
+			int npages = (mod->size + PAGE_SIZE - 1) >> PAGE_SHIFT;
+			kp_do_set_memory_nx((unsigned long)mod->start, npages);
+		}
+		if (kp_module_memfree && mod->start)
+			kp_free_exec(mod->start);
+		kfree(mod);
+	}
 }

@@ -4,4 +4,7 @@
 
 int kp_hook_runtime_init(void);
 
+/* True if @addr lies in a hook trampoline page allocated by hook_mem_zalloc(). */
+bool kp_hook_addr_in_region(unsigned long addr);
+
 #endif

@@ -19,6 +19,7 @@ struct kp_hook_mem {
 	uintptr_t origin;
 	enum hook_type type;
 	void *region;
+	size_t size;                  /* 实际分配的内存大小 */
 	union {
 		hook_t hook;
 		hook_chain_t chain;
@@ -87,6 +88,25 @@ static void kp_hook_flush_all(void)
 		kp_hook_flush_icache_all();
 }
 
+bool kp_hook_addr_in_region(unsigned long addr)
+{
+	struct kp_hook_mem *mem;
+	bool found = false;
+
+	mutex_lock(&kp_hook_lock);
+	list_for_each_entry(mem, &kp_hook_mems, list) {
+		unsigned long start = (unsigned long)mem->region;
+		unsigned long end = start + mem->size;  /* 使用实际大小 */
+
+		if (mem->region && addr >= start && addr < end) {
+			found = true;
+			break;
+		}
+	}
+	mutex_unlock(&kp_hook_lock);
+	return found;
+}
+
 int kp_hook_runtime_init(void)
 {
 	kp_hook_module_alloc = (void *)kp_resolve_symbol("module_alloc");
@@ -137,6 +157,7 @@ void *hook_mem_zalloc(uintptr_t origin, enum hook_type type)
 	mem->payload = mem->region;
 	mem->origin = origin;
 	mem->type = type;
+	mem->size = PAGE_ALIGN(size);  /* 记录实际大小 */
 	mutex_lock(&kp_hook_lock);
 	list_add_tail(&mem->list, &kp_hook_mems);
 	mutex_unlock(&kp_hook_lock);
@@ -167,9 +188,10 @@ void hook_mem_free(void *payload)
 	list_for_each_entry_safe(mem, tmp, &kp_hook_mems, list) {
 		if (mem->payload == payload) {
 			list_del(&mem->list);
-			mutex_unlock(&kp_hook_lock);
+			/* 必须在持有锁时释放内存，防止 UAF */
 			kp_hook_exec_free(mem->region);
 			kfree(mem);
+			mutex_unlock(&kp_hook_lock);
 			return;
 		}
 	}

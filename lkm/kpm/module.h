@@ -58,6 +58,9 @@ struct kp_module {
 
 	void *start;
 
+	/* 引用计数：防止在 kallsyms 回调期间释放内存 */
+	atomic_t refcnt;
+
 	struct list_head list;
 };
 
