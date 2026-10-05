@@ -61,7 +61,7 @@ static bool kp_target_in_module(unsigned long target)
 // 原版过滤模式并不完整，因此直接关闭cfi
 static inline bool kp_should_cfi_pass(unsigned long target)
 {
-	return true;
+	return false;
 }
 
 /* ---- find_check_fn (Qualcomm kallsyms/CFI hardening) ------------------ */
