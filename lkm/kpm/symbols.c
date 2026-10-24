@@ -73,7 +73,7 @@ struct kp_kpm_cred_offset {
 
     security_offset,
 
-    rcu_offset,
+    rcu_offset;
 };
 
 static struct kp_kpm_cred_offset kp_kpm_cred_offset = {
