@@ -5,7 +5,6 @@
  * Supercall command dispatch. ABI matches user/uapi/scdefs.h.
  */
 #include "dispatch.h"
-#include "su.h"
 
 #include <linux/errno.h>
 #include <scdefs.h>
@@ -35,8 +34,8 @@ long kp_control_feature_sc(const char __user *uname, int state)
 
 long kp_handle_supercall(long cmd, long a1, long a2, long a3, long a4)
 {
-	/* Argument values may contain userspace pointers or credentials. */
-	logkd("supercall cmd 0x%lx\n", cmd);
+	/* Debug: log every supercall the manager/root app issues. */
+	logki("supercall cmd 0x%lx a1=%lx a2=%lx a3=%lx a4=%lx\n", cmd, a1, a2, a3, a4);
 
 	switch (cmd) {
 	case SUPERCALL_HELLO:
@@ -47,27 +46,9 @@ long kp_handle_supercall(long cmd, long a1, long a2, long a3, long a4)
 	case SUPERCALL_KERNEL_VER:
 		return kp_kver();
 	case SUPERCALL_BUILD_TIME:
-		return kp_su_unsupported_buildtime((char __user *)a1, (int)a2);
-
-	case SUPERCALL_SU:
-		return kp_su_sc((struct su_profile __user *)a1);
-	case SUPERCALL_SU_TASK:
-		return kp_su_task_sc((pid_t)a1, (struct su_profile __user *)a2);
-	case SUPERCALL_SU_GRANT_UID:
-		return kp_su_grant_uid_sc((struct su_profile __user *)a1);
-	case SUPERCALL_SU_REVOKE_UID:
-		return kp_su_revoke_uid_sc((uid_t)a1);
-	case SUPERCALL_SU_NUMS:
-		return kp_su_allow_uid_nums_sc();
-	case SUPERCALL_SU_LIST:
-		return kp_su_allow_uid_list_sc((uid_t __user *)a1, (int)a2);
-	case SUPERCALL_SU_PROFILE:
-		return kp_su_allow_uid_profile_sc((uid_t)a1, (struct su_profile __user *)a2);
-	case SUPERCALL_SU_GET_PATH:
-		return kp_su_get_path_sc((char __user *)a1, (int)a2);
-	case SUPERCALL_SU_RESET_PATH:
-		return kp_su_reset_path_sc((const char __user *)a1);
-
+		/* Return version string length so user-space can detect an unsupported
+		 * buildtime. Without the su layer this is a no-op stub. */
+		return -ENOSYS;
 	case SUPERCALL_KPM_LOAD:
 		return kp_kpm_load_sc((const char __user *)a1, (const char __user *)a2,
 				      (void __user *)a3);

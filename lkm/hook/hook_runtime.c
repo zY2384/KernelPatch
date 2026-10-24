@@ -167,9 +167,10 @@ void hook_mem_free(void *payload)
 	list_for_each_entry_safe(mem, tmp, &kp_hook_mems, list) {
 		if (mem->payload == payload) {
 			list_del(&mem->list);
-			mutex_unlock(&kp_hook_lock);
+			//mutex_unlock(&kp_hook_lock);
 			kp_hook_exec_free(mem->region);
 			kfree(mem);
+			mutex_unlock(&kp_hook_lock);
 			return;
 		}
 	}

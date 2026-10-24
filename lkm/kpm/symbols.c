@@ -24,8 +24,6 @@
 #include "../infra/symbol_resolver.h"
 #include "../infra/patch_memory.h"
 #include "../infra/syscall_table.h"
-#include "../supercall/sucompat.h"
-#include "../supercall/kstorage.h"
 #include "module.h"
 
 #include <asm/thread_info.h>
@@ -43,6 +41,79 @@ static int kp_kpm_task_in_thread_info_offset = -1;
 static int kp_kpm_stack_in_task_offset = offsetof(struct task_struct, stack);
 static int kp_kpm_stack_end_offset = THREAD_SIZE;
 static int kp_kpm_has_syscall_wrapper;
+
+struct kp_kpm_cred_offset {
+    s16 usage_offset,
+    subscribers_offset,
+    magic_offset,
+    uid_offset,
+    gid_offset,
+    suid_offset,
+    sgid_offset,
+    euid_offset,
+    egid_offset,
+    fsuid_offset,
+    fsgid_offset,
+    securebits_offset,
+    cap_inheritable_offset,
+    cap_permitted_offset,
+    cap_effective_offset,
+    cap_bset_offset,
+    cap_ambient_offset,
+
+    user_offset,
+    user_ns_offset,
+    ucounts_offset,
+    group_info_offset,
+
+    session_keyring_offset,
+    process_keyring_offset,
+    thread_keyring_offset,
+    request_key_auth_offset,
+
+    security_offset,
+
+    rcu_offset,
+};
+
+static struct kp_kpm_cred_offset kp_kpm_cred_offset = {
+    .usage_offset = offsetof(struct cred, usage),
+    .subscribers_offset = -1,
+    .magic_offset = -1,
+    .uid_offset = offsetof(struct cred, uid),
+    .gid_offset = offsetof(struct cred, gid),
+    .suid_offset = offsetof(struct cred, suid),
+    .sgid_offset = offsetof(struct cred, sgid),
+    .euid_offset = offsetof(struct cred, euid),
+    .egid_offset = offsetof(struct cred, egid),
+    .fsuid_offset = offsetof(struct cred, fsuid),
+    .fsgid_offset = offsetof(struct cred, fsgid),
+    .securebits_offset = offsetof(struct cred, securebits),
+    .cap_inheritable_offset = offsetof(struct cred, cap_inheritable),
+    .cap_permitted_offset = offsetof(struct cred, cap_permitted),
+    .cap_effective_offset = offsetof(struct cred, cap_effective),
+    .cap_bset_offset = offsetof(struct cred, cap_bset),
+    .cap_ambient_offset = offsetof(struct cred, cap_ambient),
+
+    .user_offset = offsetof(struct cred, user),
+    .user_ns_offset = offsetof(struct cred, user_ns),
+    #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 14, 0)
+    .ucounts_offset = offsetof(struct cred, ucounts),
+    #else
+    .ucounts_offset = -1,    
+    #endif
+    .group_info_offset = offsetof(struct cred, group_info),
+
+    .session_keyring_offset = offsetof(struct cred, session_keyring),
+    .process_keyring_offset = offsetof(struct cred, process_keyring),
+    .thread_keyring_offset = offsetof(struct cred, thread_keyring),
+    .request_key_auth_offset = offsetof(struct cred, request_key_auth),
+
+    .security_offset = offsetof(struct cred, security),
+
+    .rcu_offset = offsetof(struct cred, rcu),
+};
+
 
 struct kp_kpm_task_struct_offset {
 	s16 pid_offset, tgid_offset, thread_pid_offset, ptracer_cred_offset;
@@ -266,23 +337,25 @@ static struct pt_regs *kp_kpm_task_pt_reg(struct task_struct *task)
 	return (struct pt_regs *)(THREAD_SIZE + stack - sizeof(struct pt_regs));
 }
 
-/* SU allowlist / exclude (mirrors kpimg sucompat.c) */
+/* SU allowlist / exclude stubs — removed in slim build; KPMs that need these
+ * should implement their own authorization logic. */
 static int kp_kpm_is_su_allow_uid(uid_t uid)
 {
-	return kp_is_su_allow_uid(uid) ? 1 : 0;
+	(void)uid;
+	return 0;
 }
 
-/* Exclude list lives in the sucompat layer (group KSTORAGE_EXCLUDE_LIST_GROUP);
- * these thin wrappers are what KPMs see through the compatibility symbol
- * table, so the auto-loaded package_config excludes are visible to them. */
 static int kp_kpm_get_ap_mod_exclude(uid_t uid)
 {
-	return kp_su_get_ap_mod_exclude(uid);
+	(void)uid;
+	return 0;
 }
 
 static int kp_kpm_set_ap_mod_exclude(uid_t uid, int exclude)
 {
-	return kp_su_set_ap_mod_exclude(uid, exclude);
+	(void)uid;
+	(void)exclude;
+	return 0;
 }
 
 static struct kp_kpm_symbol kp_kpm_symbols[] = {
@@ -323,6 +396,7 @@ static struct kp_kpm_symbol kp_kpm_symbols[] = {
 	KP_KPM_KFUNC_ENTRY(kasprintf),
 	KP_KPM_KFUNC_ENTRY(memchr),
 	KP_KPM_KFUNC_ENTRY(strcat),
+	{ "cred_offset", (unsigned long)&kp_kpm_cred_offset },
 	{ "mm_struct_offset", (unsigned long)&kp_kpm_mm_struct_offset },
 	{ "has_config_compat", (unsigned long)&kp_kpm_has_config_compat },
 	{ "has_syscall_wrapper", (unsigned long)&kp_kpm_has_syscall_wrapper },

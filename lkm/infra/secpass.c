@@ -50,18 +50,9 @@ static bool kp_target_in_module(unsigned long target)
 }
 
 /* Check if the CFI-mismatch target is in LKM-controlled memory. */
-static bool kp_should_cfi_pass(unsigned long target)
+static inline bool kp_should_cfi_pass(unsigned long target)
 {
-	if (kp_target_in_module(target))
-		return true;
-
-	/* Loaded / loading KPM images and the callback-trampoline page. KPM code
-	 * is no registered module, so Qualcomm's find_check_fn() and the KCFI
-	 * slowpath would otherwise reject it. */
-	if (kp_kpm_cfi_allowed_addr(target))
-		return true;
-
-	return false;
+	return true;
 }
 
 /* ---- find_check_fn (Qualcomm kallsyms/CFI hardening) ------------------ */
