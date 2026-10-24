@@ -10,8 +10,8 @@
 
 #include <linux/elf.h>
 #include <linux/errno.h>
-#include <linux/printk.h>
 #include <linux/types.h>
+#include "../include/kp_lkm.h"
 
 enum kp_aarch64_reloc_op {
 	RELOC_OP_NONE,
