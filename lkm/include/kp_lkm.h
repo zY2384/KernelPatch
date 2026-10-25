@@ -37,7 +37,7 @@ static inline long kp_kver(void)
 	return (long)LINUX_VERSION_CODE;
 }
 
-#define KP_LOG_ENABLE
+//#define KP_LOG_ENABLE
 #define KPLKM_TAG "kernelpatch-lkm"
 #ifdef KP_LOG_ENABLE
 #define logki(fmt, ...) pr_info(KPLKM_TAG ": " fmt, ##__VA_ARGS__)

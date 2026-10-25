@@ -1,6 +1,6 @@
 #! /bin/bash
 git add .
-git commit -m "fix lock"
+git commit -m "fix lock release"
 
 #git push git@github.com:zY2384/KernelPatch.git
 
