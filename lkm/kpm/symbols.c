@@ -242,8 +242,8 @@ static hook_err_t syscall_hook_add(int nr, int is_compat, void *before, void *af
                                    int bypass_gate)
 {
     unsigned long flags = kp_private_spin_lock(&syscall_hook_lock);
-
-    for (int i = 0; i < SYSCALL_HOOK_SLOT_NUM; i++) {
+    int i;
+    for (i = 0; i < SYSCALL_HOOK_SLOT_NUM; i++) {
         if (syscall_hooks[i].state != CHAIN_ITEM_STATE_READY) continue;
         if (syscall_hooks[i].nr != nr || syscall_hooks[i].is_compat != is_compat) continue;
         if ((before && syscall_hooks[i].before == before) || (after && syscall_hooks[i].after == after)) {
@@ -252,7 +252,7 @@ static hook_err_t syscall_hook_add(int nr, int is_compat, void *before, void *af
         }
     }
 
-    for (int i = 0; i < SYSCALL_HOOK_SLOT_NUM; i++) {
+    for (i = 0; i < SYSCALL_HOOK_SLOT_NUM; i++) {
         if (syscall_hooks[i].state != CHAIN_ITEM_STATE_EMPTY) continue;
         syscall_hooks[i].state = CHAIN_ITEM_STATE_BUSY;
         syscall_hook_barrier();
@@ -306,7 +306,6 @@ int syscall_hook_global_enabled(void)
 {
     return syscall_hook_global;
 }
-KP_EXPORT_SYMBOL(syscall_hook_global_enabled);
 
 /* Register the single uid gate evaluated once per syscall before dispatching any
  * callback. Passing NULL disables gating (all callbacks run). */
@@ -314,7 +313,6 @@ void syscall_hook_set_gate(int (*gate)(void))
 {
     syscall_hook_gate = gate;
 }
-KP_EXPORT_SYMBOL(syscall_hook_set_gate);
 
 void syscall_dispatch_init(void)
 {
@@ -375,7 +373,6 @@ void syscall_dispatch_init(void)
     logki("syscall dispatcher: hooked %s at %llx (skip_origin %s), global syscall hook enabled\n", name,
              (uint64_t)addr, granular ? "supported" : "unsupported");
 }
-KP_EXPORT_SYMBOL(syscall_dispatch_init);
 
 
 
