@@ -80,6 +80,10 @@ int __init kernelpatch_init(void)
 	rc = kp_kpm_init();
 	if (rc)
 		logkw("kpm loader init failed: %d (KPM supercalls will return -ENOSYS)\n", rc);
+    
+    rc = syscall_dispatch_init();
+	if (rc)
+		logkw("syscall dispatch init failed: %d\n", rc);
 
 	rc = kp_supercall_install();
 	if (rc)
