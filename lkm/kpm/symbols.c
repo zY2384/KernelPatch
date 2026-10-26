@@ -267,7 +267,7 @@ static hook_err_t syscall_hook_add(int nr, int is_compat, void *before, void *af
         syscall_hooks[i].state = CHAIN_ITEM_STATE_READY;
         if (i + 1 > syscall_hook_high) syscall_hook_high = i + 1;
         kp_private_spin_unlock(&syscall_hook_lock, flags);
-        logkv("syscall hook add: nr %d compat %d, %llx, %llx\n", nr, is_compat, before, after);
+        logkv("syscall hook add: nr %d compat %d, %p, %p\n", nr, is_compat, before, after);
         return HOOK_NO_ERR;
     }
 
