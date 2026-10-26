@@ -91,13 +91,13 @@ static inline unsigned long kallsyms_lookup_name_by_suffix(const char *name)
 }
 
 /* LKM 替代 kp_private_spin_lock/unlock: */
-static inline unsigned long kp_private_spin_lock(spinlock_t *lock)
+static inline unsigned long kp_private_spin_lock(raw_spinlock_t *lock)
 {
     unsigned long flags;
     raw_spin_lock_irqsave(lock, flags);
     return flags;
 }
-static inline void kp_private_spin_unlock(spinlock_t *lock, unsigned long flags)
+static inline void kp_private_spin_unlock(raw_spinlock_t *lock, unsigned long flags)
 {
     raw_spin_unlock_irqrestore(lock, flags);
 }
