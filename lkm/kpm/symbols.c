@@ -69,8 +69,8 @@ static volatile int syscall_hook_high = 0;      // 高水位
 static volatile int syscall_hook_global = 0;     // 全局调度器已启用
 static volatile int syscall_hook_handler_granular = 0;  // 是否挂在 invoke_syscall
 static syscall_hook_gate_t syscall_hook_gate = 0;
-static spinlock_t syscall_hook_lock;  /* LKM: 换成 kernel mutex 或 spinlock */
-
+//static spinlock_t syscall_hook_lock;  /* LKM: 换成 kernel mutex 或 spinlock */
+static DEFINE_RAW_SPINLOCK(syscall_hook_lock);
 struct syscall_hook_snapshot
 {
     syscall_hook_cb_t before;
