@@ -540,7 +540,7 @@ static long kp_kpm_strncpy_from_user(char *dst, const char __user *src, long cou
 	return rc > 0 ? rc + 1 : rc;
 }
 
-static uid_t kp_kpm_current_uid(void)
+uid_t kp_kpm_current_uid(void)
 {
 	return from_kuid(current_user_ns(), current_uid());
 }
@@ -670,7 +670,7 @@ static void kp_kpm_unhook_compat_syscalln(int nr, void *before, void *after)
 	(void)nr; (void)before; (void)after;
 }
 
-static hook_err_t hook_syscalln(int nr, int narg, void *before, void *after, void *udata)
+hook_err_t hook_syscalln(int nr, int narg, void *before, void *after, void *udata)
 {
     if (syscall_hook_global)
         return syscall_hook_add(nr, 0, before, after, udata, 0, 0);
@@ -680,7 +680,7 @@ static hook_err_t hook_syscalln(int nr, int narg, void *before, void *after, voi
     return -HOOK_CHAIN_FULL;
 }
 
-static void unhook_syscalln(int nr, void *before, void *after)
+void unhook_syscalln(int nr, void *before, void *after)
 {
     if (syscall_hook_global)
         syscall_hook_remove(nr, 0, before, after);
@@ -689,7 +689,7 @@ static void unhook_syscalln(int nr, void *before, void *after)
     // return inline_unwrap_syscalln(nr, 0, before, after);
 }
 
-static hook_err_t hook_compat_syscalln(int nr, int narg, void *before, void *after, void *udata)
+hook_err_t hook_compat_syscalln(int nr, int narg, void *before, void *after, void *udata)
 {
     if (syscall_hook_global)
         return syscall_hook_add(nr, 1, before, after, udata, 0, 0);
@@ -699,7 +699,7 @@ static hook_err_t hook_compat_syscalln(int nr, int narg, void *before, void *aft
     return -HOOK_CHAIN_FULL;
 }
 
-static void unhook_compat_syscalln(int nr, void *before, void *after)
+void unhook_compat_syscalln(int nr, void *before, void *after)
 {
     if (syscall_hook_global)
         syscall_hook_remove(nr, 1, before, after);
@@ -709,7 +709,7 @@ static void unhook_compat_syscalln(int nr, void *before, void *after)
 }
 
 /* 支持 skip_origin 的版本（supercall 通道使用） */
-static hook_err_t hook_syscalln_override(int nr, int narg, void *before, void *after, void *udata)
+hook_err_t hook_syscalln_override(int nr, int narg, void *before, void *after, void *udata)
 {
     if (syscall_hook_global && syscall_hook_handler_granular)
         return syscall_hook_add(nr, 0, before, after, udata, 1, 1);
@@ -720,9 +720,21 @@ static hook_err_t hook_syscalln_override(int nr, int narg, void *before, void *a
 }
 
 /* 强制 per-syscall 机制（回退 / legacy KPM 使用） */
-static hook_err_t hook_syscalln_legacy(int nr, int narg, void *before, void *after, void *udata)
+hook_err_t hook_syscalln_legacy(int nr, int narg, void *before, void *after, void *udata)
 {
     return kp_kpm_hook_syscalln(nr, narg, before, after, udata);
+}
+
+static long kp_control_feature_sc(const char __user *uname, int state)
+{
+	char name[64];
+	long len = strncpy_from_user(name, uname, sizeof(name));
+	if (len <= 0)
+		return -EINVAL;
+
+	/* No LKM-side features are togglable yet. */
+	(void)state;
+	return -ENOENT;
 }
 
 /* task_pt_regs */
@@ -819,6 +831,14 @@ static struct kp_kpm_symbol kp_kpm_symbols[] = {
 	{ "hook_uninstall", (unsigned long)hook_uninstall },
 	{ "hook", (unsigned long)hook },
 	{ "unhook", (unsigned long)unhook },
+	
+	{ "call_kpm_load", (unsigned long)kp_kpm_load_sc },
+	{ "call_kpm_unload", (unsigned long)kp_kpm_unload_sc },
+	{ "call_kpm_control", (unsigned long)kp_kpm_control_sc },
+	{ "call_kpm_nums", (unsigned long)kp_kpm_nums_sc },
+	{ "call_kpm_list", (unsigned long)kp_kpm_list_sc },
+	{ "call_kpm_info", (unsigned long)kp_kpm_info_sc },
+	{ "kp_control_feature_sc", (unsigned long)kp_control_feature_sc },
 };
 
 int kp_kpm_symbols_init(void)
