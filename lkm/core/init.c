@@ -120,7 +120,7 @@ int __init kernelpatch_init(void)
 
 static void __exit kernelpatch_exit(void)
 {
-	kp_supercall_uninstall();
+	//kp_supercall_uninstall();
 	/* Unhook the CFI bypass last so it shields the other teardown from
 	 * spurious CFI failures on LKM/KPM text. */
 	kp_bypass_kcfi_exit();
