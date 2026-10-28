@@ -542,7 +542,9 @@ static long kp_kpm_strncpy_from_user(char *dst, const char __user *src, long cou
 
 uid_t kp_kpm_current_uid(void)
 {
-	return from_kuid(current_user_ns(), current_uid());
+	//return from_kuid(current_user_ns(), current_uid());
+	// 5.10-6.18 因为不启用 CONFIG_USER_NS 所以可以进行快速获取uid
+	return __kuid_val(current_uid());
 }
 
 static long kp_kpm_hotpatch_nosync(void *addr, uint32_t value)
@@ -670,7 +672,7 @@ static void kp_kpm_unhook_compat_syscalln(int nr, void *before, void *after)
 	(void)nr; (void)before; (void)after;
 }
 
-hook_err_t hook_syscalln(int nr, int narg, void *before, void *after, void *udata)
+static hook_err_t hook_syscalln(int nr, int narg, void *before, void *after, void *udata)
 {
     if (syscall_hook_global)
         return syscall_hook_add(nr, 0, before, after, udata, 0, 0);
@@ -680,7 +682,7 @@ hook_err_t hook_syscalln(int nr, int narg, void *before, void *after, void *udat
     return -HOOK_CHAIN_FULL;
 }
 
-void unhook_syscalln(int nr, void *before, void *after)
+static void unhook_syscalln(int nr, void *before, void *after)
 {
     if (syscall_hook_global)
         syscall_hook_remove(nr, 0, before, after);
@@ -689,7 +691,7 @@ void unhook_syscalln(int nr, void *before, void *after)
     // return inline_unwrap_syscalln(nr, 0, before, after);
 }
 
-hook_err_t hook_compat_syscalln(int nr, int narg, void *before, void *after, void *udata)
+static hook_err_t hook_compat_syscalln(int nr, int narg, void *before, void *after, void *udata)
 {
     if (syscall_hook_global)
         return syscall_hook_add(nr, 1, before, after, udata, 0, 0);
@@ -699,7 +701,7 @@ hook_err_t hook_compat_syscalln(int nr, int narg, void *before, void *after, voi
     return -HOOK_CHAIN_FULL;
 }
 
-void unhook_compat_syscalln(int nr, void *before, void *after)
+static void unhook_compat_syscalln(int nr, void *before, void *after)
 {
     if (syscall_hook_global)
         syscall_hook_remove(nr, 1, before, after);
@@ -709,7 +711,7 @@ void unhook_compat_syscalln(int nr, void *before, void *after)
 }
 
 /* 支持 skip_origin 的版本（supercall 通道使用） */
-hook_err_t hook_syscalln_override(int nr, int narg, void *before, void *after, void *udata)
+static hook_err_t hook_syscalln_override(int nr, int narg, void *before, void *after, void *udata)
 {
     if (syscall_hook_global && syscall_hook_handler_granular)
         return syscall_hook_add(nr, 0, before, after, udata, 1, 1);
@@ -720,7 +722,7 @@ hook_err_t hook_syscalln_override(int nr, int narg, void *before, void *after, v
 }
 
 /* 强制 per-syscall 机制（回退 / legacy KPM 使用） */
-hook_err_t hook_syscalln_legacy(int nr, int narg, void *before, void *after, void *udata)
+static hook_err_t hook_syscalln_legacy(int nr, int narg, void *before, void *after, void *udata)
 {
     return kp_kpm_hook_syscalln(nr, narg, before, after, udata);
 }
