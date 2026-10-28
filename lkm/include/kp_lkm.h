@@ -37,7 +37,7 @@ static inline long kp_kver(void)
 	return (long)LINUX_VERSION_CODE;
 }
 
-//#define KP_LOG_ENABLE
+#define KP_LOG_ENABLE
 
 #define KPLKM_TAG "kernelpatch-lkm"
 #ifdef KP_LOG_ENABLE
@@ -69,7 +69,6 @@ static inline long kp_kver(void)
 #define logkfi(fmt, ...)
 #define logkfe(fmt, ...)
 #define logkfd(fmt, ...)
-
 #define logkv(fmt, ...)
 
 #endif
