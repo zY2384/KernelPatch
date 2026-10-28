@@ -69,6 +69,7 @@ static inline long kp_kver(void)
 #define logkfi(fmt, ...)
 #define logkfe(fmt, ...)
 #define logkfd(fmt, ...)
+
 #define logkv(fmt, ...)
 
 #endif
