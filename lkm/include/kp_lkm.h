@@ -38,7 +38,6 @@ static inline long kp_kver(void)
 }
 
 #define KP_LOG_ENABLE
-
 #define KPLKM_TAG "kernelpatch-lkm"
 #ifdef KP_LOG_ENABLE
 #define logki(fmt, ...) pr_info(KPLKM_TAG ": " fmt, ##__VA_ARGS__)
@@ -49,28 +48,15 @@ static inline long kp_kver(void)
 #define logkfi(fmt, ...) logki(fmt, ##__VA_ARGS__)
 #define logkfe(fmt, ...) logke(fmt, ##__VA_ARGS__)
 #define logkfd(fmt, ...) logkd(fmt, ##__VA_ARGS__)
-#define logkv(fmt, ...) logki(fmt, ##__VA_ARGS__)
 #else
-
-// #define logki(fmt, ...) no_printk(fmt, ##__VA_ARGS__)
-// #define logke(fmt, ...) no_printk(fmt, ##__VA_ARGS__)
-// #define logkw(fmt, ...) no_printk(fmt, ##__VA_ARGS__)
-// #define logkd(fmt, ...) no_printk(fmt, ##__VA_ARGS__)
-// #define logkem(fmt, ...) no_printk(KPLKM_TAG ": " fmt, ##__VA_ARGS__)
-// #define logkfi(fmt, ...) no_printk(fmt, ##__VA_ARGS__)
-// #define logkfe(fmt, ...) no_printk(fmt, ##__VA_ARGS__)
-// #define logkfd(fmt, ...) no_printk(fmt, ##__VA_ARGS__)
-// #define logkv(fmt, ...) no_printk(fmt, ##__VA_ARGS__)
-#define logki(fmt, ...)
-#define logke(fmt, ...)
-#define logkw(fmt, ...)
-#define logkd(fmt, ...)
-#define logkem(fmt, ...)
-#define logkfi(fmt, ...)
-#define logkfe(fmt, ...)
-#define logkfd(fmt, ...)
-#define logkv(fmt, ...)
-
+#define logki(fmt, ...) no_printk(fmt, ##__VA_ARGS__)
+#define logke(fmt, ...) no_printk(fmt, ##__VA_ARGS__)
+#define logkw(fmt, ...) no_printk(fmt, ##__VA_ARGS__)
+#define logkd(fmt, ...) no_printk(fmt, ##__VA_ARGS__)
+#define logkem(fmt, ...) no_printk(KPLKM_TAG ": " fmt, ##__VA_ARGS__)
+#define logkfi(fmt, ...) no_printk(fmt, ##__VA_ARGS__)
+#define logkfe(fmt, ...) no_printk(fmt, ##__VA_ARGS__)
+#define logkfd(fmt, ...) no_printk(fmt, ##__VA_ARGS__)
 #endif
 
 #endif /* _KP_LKM_H_ */

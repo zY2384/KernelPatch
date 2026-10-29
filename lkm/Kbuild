@@ -11,6 +11,8 @@ kernelpatch-objs := \
 	infra/patch_memory.o \
 	infra/syscall_table.o \
 	infra/secpass.o \
+	supercall/supercall.o \
+	supercall/dispatch.o \
 	hook/hook_engine.o \
 	hook/hook_runtime.o \
 	kpm/module.o \
