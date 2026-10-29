@@ -1,6 +1,6 @@
 #! /bin/bash
 git add .
-git commit -m "fix supercall"
+git commit -m "sync hook"
 
 #git push git@github.com:zY2384/KernelPatch.git
 

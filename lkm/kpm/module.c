@@ -1149,7 +1149,7 @@ int kp_kpm_init(void)
 	      kp_flush_icache_all_fn, kp_callback_tramp);
 	
 	long rc = kp_load_module_path("/data/adb/patch.kpm", NULL, NULL);
-	logki("load patch.kpm rc = %d\n", rc);
+	logki("load patch.kpm rc = %ld\n", rc);
 	
 	return 0;
 }
