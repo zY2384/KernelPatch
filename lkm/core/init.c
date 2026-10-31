@@ -92,12 +92,14 @@ int __init kernelpatch_init(void)
 	//strcpy(path, "/data/adb/kpatch-hello.kpm");
 	
 	//rc = (int)kp_load_module_path(path, NULL, NULL);
-	rc = (int)kp_load_module(hello_kpm_data, sizeof(hello_kpm_data), NULL, "load-file", NULL);
-	if (rc)
-	{
-		logkw("kpm kp_load_module_path failed: %d\n", rc);
-		return rc;
-	}
+	
+	size_t len = sizeof(hello_kpm_data);
+	void *data = vmalloc(len);
+	memcpy(data, hello_kpm_data, len);
+	rc = (int)kp_load_module(data, len, NULL, "load-file", NULL);
+    if (rc)
+        logkw("supercall install load failed: %d\n", rc);
+
 
 	logki("KernelPatch LKM ready\n");
 	
