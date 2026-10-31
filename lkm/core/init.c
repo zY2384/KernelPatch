@@ -86,7 +86,8 @@ int __init kernelpatch_init(void)
 		// return rc;
 	
 	rc = (int)kp_load_module_path("/storage/emulated/0/Download/KPM/hello.kpm", NULL, NULL);
-
+        logkw("kpm kp_load_module_path state: %d\n", rc);
+	
 	logki("KernelPatch LKM ready\n");
 	
 	kobject_del(&THIS_MODULE->mkobj.kobj);
