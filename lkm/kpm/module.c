@@ -402,10 +402,21 @@ static int simplify_symbols(struct kp_module *mod, struct kp_load_info *info)
 			sym[i].st_value = addr;
 			break;
 		}
-		default:
-			secbase = info->sechdrs[sym[i].st_shndx].sh_addr;
-			sym[i].st_value += secbase;
-			break;
+		// default:
+			// secbase = info->sechdrs[sym[i].st_shndx].sh_addr;
+			// sym[i].st_value += secbase;
+			// break;
+			default:
+			{
+                if (sym[i].st_name == 0 && sym[i].st_shndx > 0) {
+                    /* 编译器生成的段锚点符号（如 $x.0），st_value 应保持 0，
+                     * 不要加上 secbase，否则 Dispatcher 调用地址会变成 mod->start + 0 */
+                    break;
+                }
+                secbase = info->sechdrs[sym[i].st_shndx].sh_addr;
+                sym[i].st_value += secbase;
+                break;
+            }
 		}
 	}
 	return ret;
@@ -907,13 +918,13 @@ long kp_load_module_path(const char *path, const char *args, void __user *reserv
 	logkfd("module size: %llx\n", len);
 	vfs_llseek(filp, 0, SEEK_SET);
 
-	void *data = vmalloc(len);
+	void *data = kvzalloc(len);
 	if (!data) {
 		rc = -ENOMEM;
 		set_kpm_load_result(reserved, rc, "allocate module file buffer failed");
 		goto close;
 	}
-	memset(data, 0, len);
+	//memset(data, 0, len);
 
 	loff_t pos = 0;
 	kernel_read(filp, data, len, &pos);
