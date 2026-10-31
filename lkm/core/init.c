@@ -17,6 +17,8 @@
 #include "../kpm/module.h"
 #include "../infra/secpass.h"
 #include <linux/slab.h>
+#include <linux/vmalloc.h>
+#include <linux/string.h>
 
 /*
  * Some A12-5.10 third-party kernels advertise CC_HAVE_STACKPROTECTOR_SYSREG but
