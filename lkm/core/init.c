@@ -16,6 +16,7 @@
 #include "../supercall/supercall.h"
 #include "../kpm/module.h"
 #include "../infra/secpass.h"
+#include <linux/slab.h>
 
 /*
  * Some A12-5.10 third-party kernels advertise CC_HAVE_STACKPROTECTOR_SYSREG but
@@ -82,7 +83,7 @@ int __init kernelpatch_init(void)
 		logkw("kpm loader init failed: %d (KPM supercalls will return -ENOSYS)\n", rc);
 
 	//rc = kp_supercall_install();
-	char *path = (char*)kzalloc(1024, GFP_KERNEL);
+	char *path = (char *)kzalloc(1024, GFP_KERNEL);
 	strcpy(path, "/data/adb/kpatch-hello.kpm");
 	
 	rc = (int)kp_load_module_path(path, NULL, NULL);
