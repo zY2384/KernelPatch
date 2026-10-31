@@ -361,6 +361,8 @@ static int kp_kpm_set_ap_mod_exclude(uid_t uid, int exclude)
 	return 0;
 }
 
+static void* get_kpm_symbols(void);
+
 static struct kp_kpm_symbol kp_kpm_symbols[KP_KPM_SYMBOLS_COUNT] = {
 	{ "compat_copy_to_user", (unsigned long)kp_kpm_copy_to_user },
 	{ "compat_strncpy_from_user", (unsigned long)kp_kpm_strncpy_from_user },
@@ -425,11 +427,17 @@ static struct kp_kpm_symbol kp_kpm_symbols[KP_KPM_SYMBOLS_COUNT] = {
 	{ "hook_uninstall", (unsigned long)hook_uninstall },
 	{ "hook", (unsigned long)hook },
 	{ "unhook", (unsigned long)unhook },
-	{ "__kpm_symbols", (unsigned long)&kp_kpm_symbols },
+	{ "get_kpm_symbols", (unsigned long)get_kpm_symbols },
 };
+
+static void* get_kpm_symbols(void)
+{
+    return &kp_kpm_symbols;
+}
 
 int kp_kpm_symbols_init(void)
 {
+	kp_kpm_symbols[KP_KPM_SYMBOLS_COUNT - 1].addr = 0x1111;
 	kp_kpm_printk_fn = kp_kpm_printk;
 	kp_kpm_kallsyms_lookup_name_fn = kallsyms_lookup_name;
 	/* Route KPM kallsyms iteration through the bti-c trampoline + CFI shield
