@@ -28,9 +28,6 @@
 
 #include <asm/thread_info.h>
 #include <hook.h>
-#include <linux/slab.h>
-
-#define KP_KPM_SYMBOLS_COUNT 256
 
 static u32 kp_kpm_kver = LINUX_VERSION_CODE;
 static u32 kp_kpm_kpver = KP_LKM_VERSION_CODE;
@@ -362,8 +359,7 @@ static int kp_kpm_set_ap_mod_exclude(uid_t uid, int exclude)
 	return 0;
 }
 
-static struct kp_kpm_symbol *kp_kpm_symbols;
-static struct kp_kpm_symbol _kp_kpm_symbols[] = {
+static struct kp_kpm_symbol kp_kpm_symbols[] = {
 	{ "compat_copy_to_user", (unsigned long)kp_kpm_copy_to_user },
 	{ "compat_strncpy_from_user", (unsigned long)kp_kpm_strncpy_from_user },
 	{ "current_uid", (unsigned long)kp_kpm_current_uid },
@@ -429,53 +425,8 @@ static struct kp_kpm_symbol _kp_kpm_symbols[] = {
 	{ "unhook", (unsigned long)unhook },
 };
 
-static int get_kpm_symbol_slot(void)
-{
-    int i;
-    for (i = 0;; i++) {
-		if (kp_kpm_symbols[i].name && !strcmp("unknown", kp_kpm_symbols[i].name))
-		    break;
-		if (!kp_kpm_symbols[i].name)
-			return i;
-	}
-	return -1;
-}
-
 int kp_kpm_symbols_init(void)
 {
-	kp_kpm_symbols = (struct kp_kpm_symbol *)kzalloc(KP_KPM_SYMBOLS_COUNT * sizeof(struct kp_kpm_symbol), GFP_KERNEL);
-	memcpy(kp_kpm_symbols, &_kp_kpm_symbols, sizeof(_kp_kpm_symbols));
-	kp_kpm_symbols[KP_KPM_SYMBOLS_COUNT - 1].name = "unknown"; //用于确认表结尾
-	int kpslot = get_kpm_symbol_slot();
-	kp_kpm_symbols[kpslot].name = "__kp_kpm_symbols";
-	kp_kpm_symbols[kpslot].addr = (unsigned long)kp_kpm_symbols;
-	
-	kpslot ++;	
-	kp_kpm_symbols[kpslot].name = "load_module_path";
-	kp_kpm_symbols[kpslot].addr = (unsigned long)kp_load_module_path;
-	
-	kpslot ++;	
-	kp_kpm_symbols[kpslot].name = "module_control0";
-	kp_kpm_symbols[kpslot].addr = (unsigned long)kp_module_control0;
-	
-	kpslot ++;	
-	kp_kpm_symbols[kpslot].name = "unload_module";
-	kp_kpm_symbols[kpslot].addr = (unsigned long)kp_unload_module;
-	
-	kpslot ++;	
-	kp_kpm_symbols[kpslot].name = "get_module_nums";
-	kp_kpm_symbols[kpslot].addr = (unsigned long)kp_get_module_nums;
-	
-	kpslot ++;
-	kp_kpm_symbols[kpslot].name = "list_modules";
-	kp_kpm_symbols[kpslot].addr = (unsigned long)kp_list_modules;
-	
-	kpslot ++;	
-	kp_kpm_symbols[kpslot].name = "get_module_info";
-	kp_kpm_symbols[kpslot].addr = (unsigned long)kp_get_module_info;
-	
-	
-	
 	kp_kpm_printk_fn = kp_kpm_printk;
 	kp_kpm_kallsyms_lookup_name_fn = kallsyms_lookup_name;
 	/* Route KPM kallsyms iteration through the bti-c trampoline + CFI shield
@@ -543,9 +494,8 @@ int kp_kpm_symbols_init(void)
 
 	logki("kpm compatibility symbol table ready (%zu symbols) printk=%px "
 	      "kallsyms_lookup_name=%px kf_strncat=%px kf_strcmp=%px\n",
-	      ARRAY_SIZE(_kp_kpm_symbols), kp_kpm_printk_fn, kp_kpm_kallsyms_lookup_name_fn,
+	      ARRAY_SIZE(kp_kpm_symbols), kp_kpm_printk_fn, kp_kpm_kallsyms_lookup_name_fn,
 	      kf_strncat, kf_strcmp);
-	
 	return 0;
 }
 
@@ -553,8 +503,8 @@ unsigned long kp_kpm_symbol_lookup(const char *name)
 {
 	int i;
 
-	for (i = 0; i < KP_KPM_SYMBOLS_COUNT; i++) {
-		if (name && kp_kpm_symbols[i].name && !strcmp(name, kp_kpm_symbols[i].name))
+	for (i = 0; i < ARRAY_SIZE(kp_kpm_symbols); i++) {
+		if (!strcmp(name, kp_kpm_symbols[i].name))
 			return kp_kpm_symbols[i].addr;
 	}
 	return 0;
