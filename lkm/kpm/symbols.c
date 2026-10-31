@@ -507,7 +507,7 @@ unsigned long kp_kpm_symbol_lookup(const char *name)
 	int i;
 
 	for (i = 0; i < KP_KPM_SYMBOLS_COUNT; i++) {
-		if (name && kp_kpm_symbols[i].name !strcmp(name, kp_kpm_symbols[i].name))
+		if (name && kp_kpm_symbols[i].name && !strcmp(name, kp_kpm_symbols[i].name))
 			return kp_kpm_symbols[i].addr;
 	}
 	return 0;
