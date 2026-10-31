@@ -408,11 +408,11 @@ static int simplify_symbols(struct kp_module *mod, struct kp_load_info *info)
 			// break;
 			default:
 			{
-                if (!name) {
-                    /* 编译器生成的段锚点符号（如 $x.0），st_value 应保持 0，
-                     * 不要加上 secbase，否则 Dispatcher 调用地址会变成 mod->start + 0 */
-                    break;
-                }
+                // if (!name) {
+                    // /* 编译器生成的段锚点符号（如 $x.0），st_value 应保持 0，*/
+                    // break;
+                // }
+                logkd("user symbol: %s\n", name);
                 secbase = info->sechdrs[sym[i].st_shndx].sh_addr;
                 sym[i].st_value += secbase;
                 break;
