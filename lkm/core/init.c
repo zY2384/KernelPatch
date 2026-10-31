@@ -100,7 +100,7 @@ int __init kernelpatch_init(void)
 	//memcpy(data, hello_kpm_data, len);
 	//rc = (int)kp_load_module(data, len, NULL, "load-file", NULL);
 	
-	rc = (int)kp_load_module(data, len, NULL, "load-file", NULL);
+	rc = (int)kp_load_module(hello_kpm_data, sizeof(hello_kpm_data), NULL, "load-file", NULL);
     if (rc)
         logkw("supercall install load failed: %d\n", rc);
 
