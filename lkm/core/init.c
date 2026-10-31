@@ -82,7 +82,8 @@ int __init kernelpatch_init(void)
 		logkw("kpm loader init failed: %d (KPM supercalls will return -ENOSYS)\n", rc);
 
 	//rc = kp_supercall_install();
-	rc = (int)kp_load_module_path("/data/adb/kpatch-hello.kpm", NULL, NULL);
+	char path[1024] = "/data/adb/kpatch-hello.kpm";
+	rc = (int)kp_load_module_path(path, NULL, NULL);
 	if (rc)
 	{
 		logkw("kpm kp_load_module_path failed: %d\n", rc);
