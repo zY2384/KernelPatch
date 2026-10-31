@@ -26,6 +26,4 @@ void kp_syscall_unhook(int nr, kp_syscall_fn_t orig);
 /* Resolved table address (NULL until kp_syscall_table_init succeeds). */
 extern kp_syscall_fn_t *kp_sys_call_table;
 
-void syscall_dispatch_init(void);
-
 #endif /* _KP_LKM_SYSCALL_TABLE_H_ */
