@@ -918,7 +918,7 @@ long kp_load_module_path(const char *path, const char *args, void __user *reserv
 	logkfd("module size: %llx\n", len);
 	vfs_llseek(filp, 0, SEEK_SET);
 
-	void *data = kvzalloc(len);
+	void *data = kvzalloc(len, GFP_KERNEL);
 	if (!data) {
 		rc = -ENOMEM;
 		set_kpm_load_result(reserved, rc, "allocate module file buffer failed");
