@@ -497,7 +497,7 @@ int kp_kpm_symbols_init(void)
 
 	logki("kpm compatibility symbol table ready (%zu symbols) printk=%px "
 	      "kallsyms_lookup_name=%px kf_strncat=%px kf_strcmp=%px\n",
-	      KP_KPM_SYMBOLS_COUNT, kp_kpm_printk_fn, kp_kpm_kallsyms_lookup_name_fn,
+	      (size_t)KP_KPM_SYMBOLS_COUNT, kp_kpm_printk_fn, kp_kpm_kallsyms_lookup_name_fn,
 	      kf_strncat, kf_strcmp);
 	return 0;
 }
@@ -507,7 +507,7 @@ unsigned long kp_kpm_symbol_lookup(const char *name)
 	int i;
 
 	for (i = 0; i < KP_KPM_SYMBOLS_COUNT; i++) {
-		if (!strcmp(name, kp_kpm_symbols[i].name))
+		if (name && kp_kpm_symbols[i].name !strcmp(name, kp_kpm_symbols[i].name))
 			return kp_kpm_symbols[i].addr;
 	}
 	return 0;
