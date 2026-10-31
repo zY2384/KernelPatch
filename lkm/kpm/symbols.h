@@ -3,6 +3,7 @@
 #define _KP_LKM_KPM_SYMBOLS_H_
 
 #include <linux/types.h>
+#include "kpm.h"
 
 int kp_kpm_symbols_init(void);
 unsigned long kp_kpm_symbol_lookup(const char *name);
