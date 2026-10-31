@@ -408,7 +408,7 @@ static int simplify_symbols(struct kp_module *mod, struct kp_load_info *info)
 			// break;
 			default:
 			{
-                if (sym[i].st_name == 0 && sym[i].st_shndx > 0) {
+                if (!name) {
                     /* 编译器生成的段锚点符号（如 $x.0），st_value 应保持 0，
                      * 不要加上 secbase，否则 Dispatcher 调用地址会变成 mod->start + 0 */
                     break;
