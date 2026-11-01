@@ -377,6 +377,7 @@ static int simplify_symbols(struct kp_module *mod, struct kp_load_info *info)
 
 	for (i = 1; i < symsec->sh_size / sizeof(Elf_Sym); i++) {
 		const char *name = info->strtab + sym[i].st_name;
+		logkd("user symbol: %s %x\n", name, (int)sym[i].st_shndx);
 		switch (sym[i].st_shndx) {
 		case SHN_COMMON:
 			if (!strncmp(name, "__gnu_lto", 9)) {
@@ -402,21 +403,21 @@ static int simplify_symbols(struct kp_module *mod, struct kp_load_info *info)
 			sym[i].st_value = addr;
 			break;
 		}
-		// default:
-			// secbase = info->sechdrs[sym[i].st_shndx].sh_addr;
-			// sym[i].st_value += secbase;
-			// break;
-			default:
-			{
-                // if (!name) {
-                    // /* 编译器生成的段锚点符号（如 $x.0），st_value 应保持 0，*/
-                    // break;
-                // }
-                logkd("user symbol: %s\n", name);
-                secbase = info->sechdrs[sym[i].st_shndx].sh_addr;
-                sym[i].st_value += secbase;
-                break;
-            }
+		default:
+			secbase = info->sechdrs[sym[i].st_shndx].sh_addr;
+			sym[i].st_value += secbase;
+			break;
+			// default:
+			// {
+                // // if (!name) {
+                    // // /* 编译器生成的段锚点符号（如 $x.0），st_value 应保持 0，*/
+                    // // break;
+                // // }
+                // logkd("user symbol: %s\n", name);
+                // secbase = info->sechdrs[sym[i].st_shndx].sh_addr;
+                // sym[i].st_value += secbase;
+                // break;
+            // }
 		}
 	}
 	return ret;
