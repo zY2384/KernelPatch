@@ -373,7 +373,8 @@ static int simplify_symbols(struct kp_module *mod, struct kp_load_info *info)
 	Elf_Sym *sym = (void *)symsec->sh_addr;
 	unsigned long secbase;
 	unsigned int i;
-	int ret = 0;
+	//int ret = 0;
+	int ret = -ENOENT;
     logki("simplify_symbols: [%d] [%ld]\n", (int)(symsec->sh_size / sizeof(Elf_Sym)), (long)symsec->sh_size);
     
 	for (i = 1; i < symsec->sh_size / sizeof(Elf_Sym); i++) {
@@ -406,22 +407,20 @@ static int simplify_symbols(struct kp_module *mod, struct kp_load_info *info)
 			sym[i].st_value = addr;
 			break;
 		}
-		default:
-			logki("simplify_symbols default: [%s]\n", name);
-			secbase = info->sechdrs[sym[i].st_shndx].sh_addr;
-			sym[i].st_value += secbase;
-			break;
-			// default:
-			// {
-                // // if (!name) {
-                    // // /* 编译器生成的段锚点符号（如 $x.0），st_value 应保持 0，*/
-                    // // break;
-                // // }
-                // logkd("user symbol: %s\n", name);
-                // secbase = info->sechdrs[sym[i].st_shndx].sh_addr;
-                // sym[i].st_value += secbase;
-                // break;
-            // }
+		// default:
+			// logki("simplify_symbols default: [%s]\n", name);
+			// secbase = info->sechdrs[sym[i].st_shndx].sh_addr;
+			// sym[i].st_value += secbase;
+			// break;
+			default:
+			{
+                // kpm模块最少定义一个普通函数
+                if (name && (strstr(name, "$") == NULL))
+                    ret = 0;
+                secbase = info->sechdrs[sym[i].st_shndx].sh_addr;
+                sym[i].st_value += secbase;
+                break;
+            }
 		}
 	}
 	return ret;
