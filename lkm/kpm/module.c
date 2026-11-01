@@ -374,12 +374,12 @@ static int simplify_symbols(struct kp_module *mod, struct kp_load_info *info)
 	unsigned long secbase;
 	unsigned int i;
 	int ret = 0;
-    logkd("simplify_symbols: [%d] [%ld]\n", (int)(symsec->sh_size / sizeof(Elf_Sym)), (long)symsec->sh_size);
+    logki("simplify_symbols: [%d] [%ld]\n", (int)(symsec->sh_size / sizeof(Elf_Sym)), (long)symsec->sh_size);
     
 	for (i = 1; i < symsec->sh_size / sizeof(Elf_Sym); i++) {
 		const char *name = info->strtab + sym[i].st_name;
 		
-		logkd("simplify_symbols user symbol: [%s] [%x]\n", name, (int)sym[i].st_shndx);
+		logki("simplify_symbols user symbol: [%s] [%x]\n", name, (int)sym[i].st_shndx);
 		
 		switch (sym[i].st_shndx) {
 		case SHN_COMMON:
@@ -407,6 +407,7 @@ static int simplify_symbols(struct kp_module *mod, struct kp_load_info *info)
 			break;
 		}
 		default:
+			logki("simplify_symbols default: [%s]\n", name);
 			secbase = info->sechdrs[sym[i].st_shndx].sh_addr;
 			sym[i].st_value += secbase;
 			break;
