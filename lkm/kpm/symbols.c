@@ -28,6 +28,7 @@
 
 #include <asm/thread_info.h>
 #include <hook.h>
+#include "kpm.h"
 
 #define KP_KPM_SYMBOLS_COUNT 256
 
@@ -363,7 +364,20 @@ static int kp_kpm_set_ap_mod_exclude(uid_t uid, int exclude)
 
 static void* get_kpm_symbols(void);
 
+static long kp_control_feature_sc(const char __user *uname, int state)
+{
+	char name[64];
+	long len = strncpy_from_user(name, uname, sizeof(name));
+	if (len <= 0)
+		return -EINVAL;
+
+	/* No LKM-side features are togglable yet. */
+	(void)state;
+	return -ENOENT;
+}
+
 static struct kp_kpm_symbol kp_kpm_symbols[KP_KPM_SYMBOLS_COUNT] = {
+	{ "__kpm_symbols_size", KP_KPM_SYMBOLS_COUNT },
 	{ "compat_copy_to_user", (unsigned long)kp_kpm_copy_to_user },
 	{ "compat_strncpy_from_user", (unsigned long)kp_kpm_strncpy_from_user },
 	{ "current_uid", (unsigned long)kp_kpm_current_uid },
@@ -427,6 +441,13 @@ static struct kp_kpm_symbol kp_kpm_symbols[KP_KPM_SYMBOLS_COUNT] = {
 	{ "hook_uninstall", (unsigned long)hook_uninstall },
 	{ "hook", (unsigned long)hook },
 	{ "unhook", (unsigned long)unhook },
+	{ "call_kpm_load", (unsigned long)kp_kpm_load_sc },
+	{ "call_kpm_unload", (unsigned long)kp_kpm_unload_sc },
+	{ "call_kpm_control", (unsigned long)kp_kpm_control_sc },
+	{ "call_kpm_nums", (unsigned long)kp_kpm_nums_sc },
+	{ "call_kpm_list", (unsigned long)kp_kpm_list_sc },
+	{ "call_kpm_info", (unsigned long)kp_kpm_info_sc },
+	{ "kp_control_feature_sc", (unsigned long)kp_control_feature_sc },
 	{ "get_kpm_symbols", (unsigned long)get_kpm_symbols },
 };
 
@@ -437,7 +458,6 @@ static void* get_kpm_symbols(void)
 
 int kp_kpm_symbols_init(void)
 {
-	kp_kpm_symbols[KP_KPM_SYMBOLS_COUNT - 1].addr = 0x1111;
 	kp_kpm_printk_fn = kp_kpm_printk;
 	kp_kpm_kallsyms_lookup_name_fn = kallsyms_lookup_name;
 	/* Route KPM kallsyms iteration through the bti-c trampoline + CFI shield

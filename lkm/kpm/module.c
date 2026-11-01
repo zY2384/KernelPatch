@@ -373,7 +373,6 @@ static int simplify_symbols(struct kp_module *mod, struct kp_load_info *info)
 	Elf_Sym *sym = (void *)symsec->sh_addr;
 	unsigned long secbase;
 	unsigned int i;
-	//int ret = 0;
 	int ret = -ENOENT;
     logki("simplify_symbols: [%d] [%ld]\n", (int)(symsec->sh_size / sizeof(Elf_Sym)), (long)symsec->sh_size);
     
@@ -407,23 +406,18 @@ static int simplify_symbols(struct kp_module *mod, struct kp_load_info *info)
 			sym[i].st_value = addr;
 			break;
 		}
-		// default:
-			// logki("simplify_symbols default: [%s]\n", name);
-			// secbase = info->sechdrs[sym[i].st_shndx].sh_addr;
-			// sym[i].st_value += secbase;
-			// break;
-			default:
-			{
-                // kpm模块最少定义一个普通函数
-                if (name && !strstr("", name) && !strstr(name, "$"))
-                {
-                    ret = 0;
-                    logki("simplify_symbols default: [%s]\n", name);
-                }
-                secbase = info->sechdrs[sym[i].st_shndx].sh_addr;
-                sym[i].st_value += secbase;
-                break;
+		default:
+		{
+            // kpm模块最少定义一个普通函数
+            if (name && !strstr("", name) && !strstr(name, "$"))
+            {
+                ret = 0;
+                logki("simplify_symbols default: [%s]\n", name);
             }
+            secbase = info->sechdrs[sym[i].st_shndx].sh_addr;
+            sym[i].st_value += secbase;
+            break;
+        }
 		}
 	}
 	return ret;
@@ -805,13 +799,7 @@ long kp_load_module(const void *data, int len, const char *args, const char *eve
 	if ((rc = simplify_symbols(mod, info)))
 		goto free;
 	logkfe("KPM [%s] symbols resolved\n", info->info.name);
-	
 	logkfe("KPM simplify_symbols rc = [%ld]\n", rc);
-	if (data)
-	{
-	    rc = -ENOENT;
-	    goto free;
-	}
 	
 	if ((rc = apply_relocations(mod, info))) {
 		set_load_error(info, "apply relocations failed");
@@ -834,7 +822,7 @@ long kp_load_module(const void *data, int len, const char *args, const char *eve
 	/* Disable BTI on the KPM pages: the module is bare-metal compiled
 		 * without bti c landing pads, and every BLR from KPM code to the
 		 * LKM / kernel faults on GKI BTI-enabled kernels. */
-		kp_clear_bti_gp((unsigned long)mod->start, mod->size);
+	kp_clear_bti_gp((unsigned long)mod->start, mod->size);
 	kp_flush_kpm_icache(mod->start, mod->size);
 	logkfe("KPM [%s] icache flushed\n", info->info.name);
 
