@@ -797,15 +797,19 @@ long kp_load_module(const void *data, int len, const char *args, const char *eve
 		set_load_error(info, "allocate executable module memory failed");
 		goto free;
 	}
-	if (!rc)
-	{
-	    rc = -ENOENT;
-	    goto free;
-	}
+	
 	logkfe("KPM [%s] moved to %px init=%px\n", info->info.name, mod->start, mod->init);
 	if ((rc = simplify_symbols(mod, info)))
 		goto free;
 	logkfe("KPM [%s] symbols resolved\n", info->info.name);
+	
+	logkfe("KPM simplify_symbols rc = [%ld]\n", rc);
+	if (data)
+	{
+	    rc = -ENOENT;
+	    goto free;
+	}
+	
 	if ((rc = apply_relocations(mod, info))) {
 		set_load_error(info, "apply relocations failed");
 		goto free;
