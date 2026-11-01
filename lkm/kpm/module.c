@@ -415,8 +415,11 @@ static int simplify_symbols(struct kp_module *mod, struct kp_load_info *info)
 			default:
 			{
                 // kpm模块最少定义一个普通函数
-                if (name && (strstr(name, "$") == NULL))
+                if (name && !strstr("", name) && !strstr(name, "$"))
+                {
                     ret = 0;
+                    logki("simplify_symbols default: [%s]\n", name);
+                }
                 secbase = info->sechdrs[sym[i].st_shndx].sh_addr;
                 sym[i].st_value += secbase;
                 break;
