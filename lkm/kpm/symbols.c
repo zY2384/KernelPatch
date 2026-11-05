@@ -29,6 +29,7 @@
 #include <asm/thread_info.h>
 #include <hook.h>
 #include "kpm.h"
+#include "../../kernel/base/hmem.h"
 
 #define KP_KPM_SYMBOLS_COUNT 256
 
@@ -449,6 +450,10 @@ static struct kp_kpm_symbol kp_kpm_symbols[KP_KPM_SYMBOLS_COUNT] = {
 	{ "call_kpm_info", (unsigned long)kp_kpm_info_sc },
 	{ "kp_control_feature_sc", (unsigned long)kp_control_feature_sc },
 	{ "get_kpm_symbols", (unsigned long)get_kpm_symbols },
+	{ "hook_mem_add", (unsigned long)hook_mem_add },
+	{ "hook_mem_zalloc", (unsigned long)hook_mem_zalloc },
+	{ "hook_mem_free", (unsigned long)hook_mem_free },
+	{ "hook_get_mem_from_origin", (unsigned long)hook_get_mem_from_origin },
 };
 
 static void* get_kpm_symbols(void)
